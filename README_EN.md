@@ -8,6 +8,10 @@
 
 [**العربية**](README.md) · [**English**](README_EN.md)
 
+<p><strong>Download on your TV with Downloader App</strong><br><strong>Download code: <code>1062755</code></strong></p>
+
+<p>Open <strong>Downloader App</strong> on your TV, enter <code>1062755</code>, and select <strong>Go</strong>.<br>After downloading the APK, select <strong>Install</strong>, allow installation from Downloader if Android asks, then open <strong>شاشة الجامع / Mosque TV</strong>.</p>
+
 [![Latest release](https://img.shields.io/github/v/release/adel2184/mosque-tv?label=Release&color=176b50)](https://github.com/adel2184/mosque-tv/releases/latest)
 ![Android 7 or later](https://img.shields.io/badge/Android-7%2B-176b50)
 ![Interface languages](https://img.shields.io/badge/UI-Arabic%20%7C%20English-176b50)
@@ -57,10 +61,14 @@ These are browser previews of the actual 2.3.2 source UI using demonstration dat
 
 | Path | Requirements | Start here |
 | --- | --- | --- |
-| **Android TV / Google TV** | Android 7+, a compatible WebView, and a remote | [Download APK](https://github.com/adel2184/mosque-tv/releases/latest/download/mosque-display-tv.apk), then follow the steps below |
+| **Android TV / Google TV** | Android 7+, a compatible WebView, and a remote | **Downloader App: `1062755`** or [download APK](https://github.com/adel2184/mosque-tv/releases/latest/download/mosque-display-tv.apk) |
 | **Computer or browser preview** | A modern browser and the source; Node.js for the initial build | [Build and run guide](docs/DEVELOPMENT.md), with [detailed browser instructions (Arabic)](README_AR.md) |
 
 ### On your TV
+
+**Directly on your TV:** open Downloader App and use code **`1062755`**, then complete installation as described at the top of this page.
+
+**Using a USB drive or file transfer:**
 
 1. Open the [latest release](https://github.com/adel2184/mosque-tv/releases/latest) and download **`mosque-display-tv.apk`**. You do not need source files or developer tools on the TV.
 2. Copy the APK to a USB drive and open it on the TV with a file manager that supports APK installation. You can also use a file-transfer method you trust.

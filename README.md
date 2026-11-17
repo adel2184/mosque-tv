@@ -8,6 +8,10 @@ Prayer times, iqama countdowns, and adhkar for your mosque display.
 
 [**العربية**](README.md) · [**English**](README_EN.md)
 
+<p dir="rtl"><strong>حمّل التطبيق من التلفاز عبر Downloader App</strong><br><strong>رمز التحميل: <code>1062755</code></strong></p>
+
+<p dir="rtl">افتح <strong>Downloader App</strong> على التلفاز، وأدخل <code>1062755</code> ثم اختر <strong>Go</strong>.<br>بعد تنزيل ملف APK اختر <strong>تثبيت</strong>، واسمح بالتثبيت من Downloader إذا طلب Android ذلك، ثم افتح <strong>شاشة الجامع</strong>.</p>
+
 [![آخر إصدار](https://img.shields.io/github/v/release/adel2184/mosque-tv?label=Release&color=176b50)](https://github.com/adel2184/mosque-tv/releases/latest)
 ![Android 7 أو أحدث](https://img.shields.io/badge/Android-7%2B-176b50)
 ![لغات الواجهة](https://img.shields.io/badge/UI-Arabic%20%7C%20English-176b50)
@@ -59,10 +63,14 @@ Prayer times, iqama countdowns, and adhkar for your mosque display.
 
 | المسار | ما تحتاج إليه | ابدأ من هنا |
 | --- | --- | --- |
-| **Android TV / Google TV** | Android 7 أو أحدث، وWebView متوافق، وريموت | [تنزيل APK](https://github.com/adel2184/mosque-tv/releases/latest/download/mosque-display-tv.apk) ثم الخطوات التالية |
+| **Android TV / Google TV** | Android 7 أو أحدث، وWebView متوافق، وريموت | **Downloader App: `1062755`** أو [تنزيل APK](https://github.com/adel2184/mosque-tv/releases/latest/download/mosque-display-tv.apk) |
 | **كمبيوتر أو معاينة بالمتصفح** | متصفح حديث ونسخة المصدر؛ Node.js للبناء الأول | [دليل التطوير والتشغيل](docs/DEVELOPMENT.md) ثم [دليل نسخة المتصفح](README_AR.md) |
 
 ### على التلفاز
+
+**من التلفاز مباشرة:** افتح Downloader App واستخدم الرمز **`1062755`**، ثم أكمل التثبيت كما هو موضح في بداية الصفحة.
+
+**بالفلاشة أو نقل الملفات:**
 
 1. افتح [آخر إصدار](https://github.com/adel2184/mosque-tv/releases/latest) ونزّل **`mosque-display-tv.apk`**. لا تحتاج إلى ملفات المصدر أو أدوات تطوير على التلفاز.
 2. انقل الملف بفلاشة USB، وافتحه على التلفاز عبر مدير ملفات يدعم تثبيت APK. يمكنك أيضًا استخدام وسيلة نقل ملفات تثق بها.
