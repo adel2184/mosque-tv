@@ -11,3 +11,4 @@ qa/*-results.json
 qa/*-report.json
 qa/*.png
 qa/*.jpg
+/qa/as/

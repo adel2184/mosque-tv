@@ -369,7 +369,8 @@
   const tvMode=Boolean(window.MosqueAndroid);
   let tvSections=[],tvSectionId='mosque',tvPane='menu',tvEditor=null,tvLastFocus='',tvScroll={};
   function tvKey(text){let hash=2166136261;for(let i=0;i<text.length;i++)hash=Math.imul(hash^text.charCodeAt(i),16777619);return(hash>>>0).toString(36);}
-  function tvFocus(id){const node=$(id);if(!node||node.disabled)return;try{node.focus({preventScroll:true});}catch(_){node.focus();}if(node.scrollIntoView)node.scrollIntoView({block:'nearest',inline:'nearest'});tvLastFocus=id;}
+  function tvKeepSelectedMenuVisible(){const selected=$('tv-section-'+tvSectionId);if(selected&&selected.scrollIntoView)selected.scrollIntoView({block:'nearest',inline:'nearest'});}
+  function tvFocus(id){const node=$(id);if(!node||node.disabled)return;try{node.focus({preventScroll:true});}catch(_){node.focus();}if(node.scrollIntoView)node.scrollIntoView({block:'nearest',inline:'nearest'});tvLastFocus=id;if(id.startsWith('tv-row-'))tvKeepSelectedMenuVisible();}
   function tvValue(row){const value=typeof row.value==='function'?row.value():row.value;return value===undefined||value===null?'':value;}
   function tvSummary(row){const value=tvValue(row);if(row.kind==='checkbox')return value?'نعم':'لا';if(row.kind==='select'){const choice=(row.options||[]).find(item=>String(item[0])===String(value));return choice?choice[1]:String(value);}return String(value).trim()||'غير محدد';}
   function tvLegacySections(){
@@ -415,6 +416,7 @@
     });
     pane.append(list);hub.append(menu,pane);$('settingsBody').replaceChildren(hub);list.scrollTop=tvScroll[tvSectionId]||0;
     if(preferredFocus&&$(preferredFocus))tvFocus(preferredFocus);
+    tvKeepSelectedMenuVisible();
   }
   function drawSettings(){
     const preferred=tvMode?(document.activeElement?.id||tvLastFocus):'';
@@ -427,10 +429,17 @@
   function tvEditorValue(){if(!tvEditor)return;const node=$('tvEditorValue');if(node)node.textContent=String(tvEditor.temp);}
   function tvEditorError(text){message(text,true);const node=$('tvEditorError');if(node)node.textContent=text;}
   function tvChangeNumber(direction){if(!tvEditor)return;const row=tvEditor.row,step=Number(row.step)||1,min=Number.isFinite(row.min)?row.min:-1000000,max=Number.isFinite(row.max)?row.max:1000000;tvEditor.temp=Math.min(max,Math.max(min,Number((Number(tvEditor.temp)+direction*step).toFixed(6))));tvEditorValue();}
+  function tvChangeTime(segment,direction){
+    if(!tvEditor||tvEditor.row.kind!=='time')return;
+    const parts=String(tvEditor.temp).split(':').map(Number),index=segment==='hours'?0:1,limit=index===0?24:60;
+    parts[index]=(parts[index]+direction+limit)%limit;
+    tvEditor.temp=parts.map(value=>String(value).padStart(2,'0')).join(':');
+    $('tvEditorHours').textContent=String(parts[0]).padStart(2,'0');$('tvEditorMinutes').textContent=String(parts[1]).padStart(2,'0');
+  }
   function tvCloseEditor(commit){
     if(!tvEditor)return;const editing=tvEditor,row=editing.row;let value=editing.temp;
     if(commit){
-      if(row.kind==='text'||row.kind==='time'||row.kind==='date')value=$('tvEditorInput').value;
+      if(row.kind==='text'||row.kind==='date')value=$('tvEditorInput').value;
       if(row.kind==='number'&&(!Number.isFinite(Number(value))||Number(value)<row.min||Number(value)>row.max)){tvEditorError('القيمة خارج المجال المسموح.');return;}
       if(row.kind==='time'&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)){tvEditorError('أدخل الوقت بصيغة HH:mm، مثل 13:25.');return;}
       if(row.kind==='date'&&!validDate(value)){tvEditorError('أدخل تاريخًا صحيحًا بصيغة YYYY-MM-DD.');return;}
@@ -441,17 +450,28 @@
   }
   function tvOpenEditor(row){
     if(state?.phase==='PRAYER_MODE')return;tvEditor={row,temp:tvValue(row)};
+    if(row.kind==='time'&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(tvEditor.temp)))tvEditor.temp='00:00';
     const panel=el('div','tv-editor');panel.id='tvEditor';panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-label',row.label);
-    const card=el('div','tv-editor-card');card.append(el('p','tv-editor-eyebrow','تحرير الإعداد'),el('h3','tv-editor-title',row.label),el('p','tv-editor-help',row.help||'OK للتأكيد، رجوع لإلغاء هذا التعديل.'));
+    const editorHelp=row.kind==='time'?(row.help?row.help+'\n':'')+'يمين ويسار: تغيير القيمة. أعلى وأسفل: التنقل بين الساعات والدقائق وأزرار التأكيد. رجوع: إلغاء التعديل.':row.help||'OK للتأكيد، رجوع لإلغاء هذا التعديل.';
+    const card=el('div','tv-editor-card');card.classList.toggle('tv-time-editor',row.kind==='time');card.append(el('p','tv-editor-eyebrow','تحرير الإعداد'),el('h3','tv-editor-title',row.label),el('p','tv-editor-help',editorHelp));
     let initial='tvEditorConfirm';
     if(row.kind==='number'){
       const controls=el('div','tv-number-controls'),minus=button('−',()=>tvChangeNumber(-1)),value=button(String(tvEditor.temp),()=>tvCloseEditor(true)),plus=button('+',()=>tvChangeNumber(1));
       minus.id='tvEditorMinus';plus.id='tvEditorPlus';value.id='tvEditorValue';value.className='tv-number-value';controls.append(minus,value,plus);card.append(controls);initial='tvEditorValue';
+    }else if(row.kind==='time'){
+      const controls=el('div','tv-time-controls');controls.dir='ltr';
+      const parts=tvEditor.temp.split(':'),hoursGroup=el('div','tv-time-segment'),minutesGroup=el('div','tv-time-segment');
+      const hoursLabel=el('span','tv-time-label','الساعات (00–23)'),minutesLabel=el('span','tv-time-label','الدقائق (00–59)');hoursLabel.dir='rtl';minutesLabel.dir='rtl';
+      const hours=button(parts[0],()=>tvFocus('tvEditorMinutes')),minutes=button(parts[1],()=>tvFocus('tvEditorConfirm'));
+      hours.id='tvEditorHours';minutes.id='tvEditorMinutes';hours.className='tv-time-value';minutes.className='tv-time-value';
+      hours.setAttribute('aria-label','الساعات، يمين للزيادة ويسار للنقصان');minutes.setAttribute('aria-label','الدقائق، يمين للزيادة ويسار للنقصان');
+      const colon=el('span','tv-time-separator',':');colon.setAttribute('aria-hidden','true');
+      hoursGroup.append(hoursLabel,hours);minutesGroup.append(minutesLabel,minutes);controls.append(hoursGroup,colon,minutesGroup);card.append(controls);initial='tvEditorHours';
     }else if(row.kind==='checkbox'||row.kind==='select'){
       const choices=row.kind==='checkbox'?[[true,'نعم'],[false,'لا']]:row.options||[];const group=el('div','tv-editor-choices');
       choices.forEach((choice,index)=>{const b=button(choice[1],()=>{tvEditor.temp=choice[0];tvCloseEditor(true);});b.id='tv-choice-'+index;b.className='tv-choice';b.classList.toggle('selected',String(choice[0])===String(tvEditor.temp));if(String(choice[0])===String(tvEditor.temp))initial=b.id;group.append(b);});card.append(group);
     }else{
-      const control=el('input','tv-editor-input');control.id='tvEditorInput';control.type='text';control.value=String(tvEditor.temp);control.maxLength=row.maxLength||1000;if(row.kind==='time'||row.kind==='date'){control.dir='ltr';control.inputMode='numeric';}card.append(control);initial=control.id;
+      const control=el('input','tv-editor-input');control.id='tvEditorInput';control.type='text';control.value=String(tvEditor.temp);control.maxLength=row.maxLength||1000;if(row.kind==='date'){control.dir='ltr';control.inputMode='numeric';}card.append(control);initial=control.id;
     }
     const editorError=el('p','error');editorError.id='tvEditorError';editorError.setAttribute('role','status');card.append(editorError);
     const actions=el('div','tv-editor-actions'),confirm=button('تأكيد',()=>tvCloseEditor(true)),cancel=button('إلغاء التعديل',()=>tvCloseEditor(false));confirm.id='tvEditorConfirm';cancel.id='tvEditorCancel';actions.append(confirm,cancel);card.append(actions);panel.append(card);$('settingsForm').append(panel);tvFocus(initial);
@@ -472,6 +492,7 @@
     if($('settingsDialog').classList.contains('previewing')&&key!=='Enter'){event.preventDefault();event.stopImmediatePropagation();tvMove($('settingsDialog').querySelectorAll('.settings-actions button'),key==='ArrowLeft'||key==='ArrowDown'?1:-1);return;}
     if(tvEditor){
       if(tvEditor.row.kind==='number'&&(key==='ArrowRight'||key==='ArrowLeft')){event.preventDefault();event.stopImmediatePropagation();tvChangeNumber(key==='ArrowRight'?1:-1);return;}
+      if(tvEditor.row.kind==='time'&&(key==='ArrowRight'||key==='ArrowLeft')&&['tvEditorHours','tvEditorMinutes'].includes(document.activeElement?.id)){event.preventDefault();event.stopImmediatePropagation();tvChangeTime(document.activeElement.id==='tvEditorHours'?'hours':'minutes',key==='ArrowRight'?1:-1);return;}
       if(document.activeElement?.id==='tvEditorInput'&&(key==='ArrowLeft'||key==='ArrowRight'))return;
       if(key==='Enter'&&document.activeElement?.id==='tvEditorInput'){event.preventDefault();event.stopImmediatePropagation();tvCloseEditor(true);return;}
       if(key!=='Enter'){event.preventDefault();event.stopImmediatePropagation();tvMove($('tvEditor').querySelectorAll('button,input'),key==='ArrowUp'||key==='ArrowLeft'?-1:1);}return;
