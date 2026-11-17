@@ -1,0 +1,3 @@
+# Preserve pinned upstream bytes on Windows checkouts.
+android/device-profiles.json -text
+licenses/CleanYourTV-MIT.txt -text

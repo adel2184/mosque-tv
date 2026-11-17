@@ -2,7 +2,7 @@
 // Explicit publication allowlist. Never traverses signing/tools/research/distribution folders.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const root=path.resolve(__dirname,'..'),out=path.join(root,'publish');fs.mkdirSync(out,{recursive:true});
-const selected=new Set(['.gitignore','README.md','README_AR.md','DATA_SOURCES.md','TEST_REPORT.md','index.html','test.html']);
+const selected=new Set(['.gitattributes','.gitignore','README.md','README_AR.md','DATA_SOURCES.md','TEST_REPORT.md','index.html','test.html']);
 const add=(folder)=>{for(const item of fs.readdirSync(path.join(root,folder),{withFileTypes:true})){const file=folder+'/'+item.name;if(item.isDirectory()){if(!['build','dist','history','node_modules','.netlify'].includes(item.name))add(file);}else if(!/\.(apk|zip|p12|jks|keystore|pyc|tgz)$/i.test(file)&&!/(^|\/)password\.txt$|(?:bridge|tv-settings|control-center)-test-results\.json|\/tree\.json$/.test(file))selected.add(file);}};
 for(const folder of ['android','assets','data','dev','licenses','docs','.github','services','optimize'])if(fs.existsSync(path.join(root,folder)))add(folder);
 const paths=Array.from(selected).sort();
