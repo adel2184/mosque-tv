@@ -61,7 +61,7 @@
   }
   document.addEventListener('keydown', function (event) {
     if (document.body.classList.contains('praying') || event.ctrlKey || event.altKey) return;
-    if (window.MosqueTV && window.MosqueTV.isOpen()) return; // The app owns its explicit menu/row/editor graph.
+    if ((window.MosqueTV && window.MosqueTV.isOpen()) || (window.MosqueControl && window.MosqueControl.isOpen())) return; // Each panel owns its explicit focus graph.
     var key = event.key || ({37:'ArrowLeft',38:'ArrowUp',39:'ArrowRight',40:'ArrowDown'})[event.keyCode];
     if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(key)) return;
     var active = document.activeElement;
@@ -143,19 +143,34 @@
   function nativeAction(id, label, method, argument, help) { return { id: id, label: label, value: 'فتح', help: help || '', kind: 'action', action: function () { invoke(method, argument); } }; }
   window.MosqueTVNative = {
     onClose: function () { powerDraft = null; },
+    onControlClose: function () { if (typeof native.cancelSpeedTest === 'function') native.cancelSpeedTest(); },
+    controlStatus: function () {
+      var device=readState('deviceStatus',{}), network=device.network||{}, flags=device.available||{}, power=readState('powerStatus',{}), update=readState('updateStatus',{}), speed=readState('speedStatus',{});
+      return {device:[device.manufacturer,device.model].filter(Boolean).join(' '),available:{bluetooth:flags.bluetooth!==false,mirror:flags.mirror===true,network:flags.wifi!==false,sound:flags.sound!==false,tv:flags.tv!==false,display:flags.display!==false,screensaver:flags.screensaver===true,speed:network.validated===true,phone:typeof native.openControl==='function',deviceSetup:typeof native.deviceSetup==='function'},rows:{network:(network.label||'إعدادات الشبكة')+(network.connected&&!network.validated?' · دون إنترنت':''),sound:device.audioOutput||'اختيار مخرج الصوت من إعدادات التلفاز',speed:speed.message||'قياس تنزيل عند الطلب؛ حتى 5 ميجابايت',update:(update.installedVersion||'')+' · '+(update.availableVersion?'يتوفر تحديث':'البحث عند الطلب فقط'),home:'اختيار واجهة البدء واستعادتها',power:power.mode==='always'?'عرض مستمر طوال اليوم':power.mode==='scheduled'?'جدول يومي: '+power.start+' — '+power.end:'السكون حسب إعدادات التلفاز',sleep:power.sleepMinutes?'يتوقف العرض بعد نحو '+power.sleepMinutes+' دقيقة':'مؤقت مؤقت لهذه الجلسة؛ لا يطفئ التلفاز'}};
+    },
+    controlAction: function (id) {
+      if (id==='speed') return invoke(readState('speedStatus',{}).running?'cancelSpeedTest':'startSpeedTest');
+      if (id==='sleep') return invoke('sleepMenu');
+      if (id==='power') return invoke('displayOff');
+      if (id==='deviceSetup') return invoke('deviceSetup');
+      var map={network:'network',sound:'audio-output',bluetooth:'bluetooth',mirror:'mirror',tv:'tv',phone:'phone',display:'display',screensaver:'screensaver'};
+      if (!Object.prototype.hasOwnProperty.call(map,id)) throw Error('اختصار غير معروف.');
+      return invoke('openControl',map[id]);
+    },
     getSections: function () {
       var home = readState('homeStatus', {}), power = readState('powerStatus', {}), update = readState('updateStatus', {}), device = readState('deviceStatus', {});
       var validHome = typeof home.isDefaultHome === 'boolean' && typeof home.canRequestHomeRole === 'boolean' && typeof home.canOpenHomeSettings === 'boolean';
       var homeText = !validHome ? 'تعذر قراءة إعداد واجهة البدء.' : home.isDefaultHome ? 'التطبيق هو واجهة البدء الافتراضية.' : 'التطبيق ليس واجهة البدء الافتراضية.';
       if (validHome) homeText = homeMessage(home, homeText);
       if (!powerDraft) powerDraft = { mode: ['always','scheduled','system'].includes(power.mode) ? power.mode : 'always', start: typeof power.start === 'string' ? power.start : '04:00', end: typeof power.end === 'string' ? power.end : '23:00' };
+      var editingPower = powerDraft;
       var request = nativeAction('tv-request-home', 'اختيار التطبيق كواجهة البدء', 'requestHomeRole');
       request.disabled = !validHome || home.isDefaultHome || (!home.canRequestHomeRole && !home.canOpenHomeSettings);
       var systemRows = [['wifi','الشبكة وWi-Fi'],['bluetooth','البلوتوث والريموت'],['sound','الصوت'],['display','الصورة والشاشة'],['power','إعدادات الطاقة في التلفاز'],['apps','التطبيقات'],['mirror','العرض والبث من جهاز آخر'],['tv','إعدادات التلفزيون'],['app','معلومات تطبيق الجامع'],['phone','التحكم من الهاتف على الشبكة المحلية']].map(function (item) { return nativeAction('tv-control-' + item[0], item[1], 'openControl', item[0]); });
-      var mode = { id:'tv-power-mode', label:'وضع تشغيل الشاشة', kind:'select', value:powerDraft.mode, options:[['always','تشغيل مستمر وإبقاء الشاشة يقظة'],['scheduled','جدول عرض مع تعتيم خارج المدة'],['system','السماح بسكون التلفاز حسب النظام']], commit:function(value){ powerDraft.mode=value; } };
-      var start = { id:'tv-power-start', label:'بداية العرض اليومي', kind:'time', value:powerDraft.start, maxLength:5, help:'بتوقيت السعودية، بنظام 24 ساعة HH:mm.', commit:function(value){powerDraft.start=value;} };
-      var end = { id:'tv-power-end', label:'نهاية العرض اليومي', kind:'time', value:powerDraft.end, maxLength:5, help:'بتوقيت السعودية. يمكن أن تمتد المدة عبر منتصف الليل؛ الوقتان مختلفان.', commit:function(value){powerDraft.end=value;} };
-      var savePower = { id:'tv-power-save', label:'حفظ إعداد الطاقة الآن', kind:'action', value:'تطبيق مستقل', action:function(){ if(powerDraft.mode==='scheduled'&&(!/^([01]\d|2[0-3]):[0-5]\d$/.test(powerDraft.start)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(powerDraft.end)||powerDraft.start===powerDraft.end)) throw Error('أدخل وقتين صحيحين ومختلفين لجدول العرض.'); invoke('savePower',JSON.stringify(powerDraft)); } };
+      var mode = { id:'tv-power-mode', label:'وضع تشغيل الشاشة', kind:'select', value:editingPower.mode, options:[['always','تشغيل مستمر وإبقاء الشاشة يقظة'],['scheduled','جدول عرض مع تعتيم خارج المدة'],['system','السماح بسكون التلفاز حسب النظام']], commit:function(value){ editingPower.mode=value; powerDraft=editingPower; } };
+      var start = { id:'tv-power-start', label:'بداية العرض اليومي', kind:'time', value:editingPower.start, maxLength:5, help:'بتوقيت السعودية، بنظام 24 ساعة HH:mm.', commit:function(value){editingPower.start=value;powerDraft=editingPower;} };
+      var end = { id:'tv-power-end', label:'نهاية العرض اليومي', kind:'time', value:editingPower.end, maxLength:5, help:'بتوقيت السعودية. يمكن أن تمتد المدة عبر منتصف الليل؛ الوقتان مختلفان.', commit:function(value){editingPower.end=value;powerDraft=editingPower;} };
+      var savePower = { id:'tv-power-save', label:'حفظ إعداد الطاقة الآن', kind:'action', value:'تطبيق مستقل', action:function(){ if(editingPower.mode==='scheduled'&&(!/^([01]\d|2[0-3]):[0-5]\d$/.test(editingPower.start)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(editingPower.end)||editingPower.start===editingPower.end)) throw Error('أدخل وقتين صحيحين ومختلفين لجدول العرض.'); invoke('savePower',JSON.stringify(editingPower)); } };
       var check = nativeAction('tv-update-check','البحث عن تحديث التطبيق','checkUpdate',undefined,'يحتاج اتصالًا عند البحث فقط؛ يستمر العرض المحلي دون اتصال.');check.disabled=!update.supported||!update.configured;
       var install = nativeAction('tv-update-install','تنزيل التحديث وتثبيته','installUpdate');install.disabled=!update.supported||!update.configured||!update.availableVersion;
       return [
@@ -168,12 +183,14 @@
     }
   };
   function refreshNativePanel(event) {
-    if (event && event.type === 'mosque-native-power-result' && (!event.detail || event.detail.success !== false)) powerDraft = null;
+    if (event && event.type === 'mosque-native-power-result' && event.detail && event.detail.saved === true) powerDraft = null;
     if (window.MosqueTV && window.MosqueTV.isOpen()) window.MosqueTV.refreshNative();
     if (event && event.detail && event.detail.message) message(String(event.detail.message),event.detail.success===false);
   }
   window.addEventListener('mosque-native-update-result',refreshNativePanel);
   window.addEventListener('mosque-native-power-result',refreshNativePanel);
+  window.addEventListener('mosque-native-control-result',function(){if(window.MosqueControl)window.MosqueControl.refreshNative();});
+  window.addEventListener('focus',function(){if(window.MosqueControl)window.MosqueControl.refreshNative();});
   var dialog = document.getElementById('settingsDialog');
   if (dialog) new MutationObserver(function () {
     if (dialog.open) ensureStartupPanel();

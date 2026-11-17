@@ -85,6 +85,7 @@ public final class MainActivity extends Activity {
     private volatile boolean praying;
     private PowerController power;
     private TvControls controls;
+    private NetworkSpeedTest speed;
     private UpdateManager updater;
     private LocalPhoneServer phone;
     private volatile boolean foreground;
@@ -111,6 +112,10 @@ public final class MainActivity extends Activity {
         setContentView(frame);
         configureWebView();
         controls = new TvControls(this);
+        speed = new NetworkSpeedTest(this, new NetworkSpeedTest.Host() {
+            @Override public boolean permitted() { return operatorAllowed(); }
+            @Override public void onResult(JSONObject value) { publishNative("mosque-native-control-result", value); }
+        });
         power = new PowerController(this, frame, value -> publishNative("mosque-native-power-result", value));
         updater = new UpdateManager(this, new UpdateManager.Host() {
             @Override public boolean canStartUpdate() { return foreground && !praying && !isFinishing() && !isDestroyed(); }
@@ -315,6 +320,23 @@ public final class MainActivity extends Activity {
 
     public final class NativeBridge {
         @JavascriptInterface public String deviceStatus() { return controls == null ? "{}" : controls.status().toString(); }
+        @JavascriptInterface public String speedStatus() { return speed == null ? "{}" : speed.status().toString(); }
+        @JavascriptInterface public void startSpeedTest() { runOnUiThread(() -> { if (operatorAllowed() && speed != null) speed.start(); }); }
+        @JavascriptInterface public void cancelSpeedTest() { runOnUiThread(() -> { if (speed != null) speed.cancel(); }); }
+        @JavascriptInterface public void sleepMenu() { runOnUiThread(() -> {
+            if (!operatorAllowed() || power == null) return;
+            final int[] minutes = {15, 30, 60, 90, 0};
+            int remaining = power.status().optInt("sleepMinutes", 0);
+            showOperatorDialog(new AlertDialog.Builder(MainActivity.this).setTitle("مؤقت إيقاف العرض" + (remaining > 0 ? " — متبقٍ نحو " + remaining + " دقيقة" : ""))
+                .setItems(new String[]{"بعد 15 دقيقة", "بعد 30 دقيقة", "بعد ساعة", "بعد ساعة ونصف", "إلغاء المؤقت"}, (dialog, which) -> {
+                    if (operatorAllowed()) power.sleep(minutes[which]);
+                }).setNegativeButton("رجوع", null).create());
+        }); }
+        @JavascriptInterface public void displayOff() { runOnUiThread(() -> {
+            if (!operatorAllowed() || power == null) return;
+            evaluate("if(window.MosqueControl)window.MosqueControl.close({restoreFocus:false});");
+            power.displayOff();
+        }); }
         @JavascriptInterface public String powerStatus() { return power == null ? "{}" : power.status().toString(); }
         @JavascriptInterface public void savePower(String value) { runOnUiThread(() -> { if (operatorAllowed() && power != null) power.save(value); }); }
         @JavascriptInterface public String updateStatus() { return updater == null ? "{}" : updater.status().toString(); }
@@ -345,6 +367,7 @@ public final class MainActivity extends Activity {
                 if (power != null) power.prayer(active);
                 DeviceSetupActivity.setPrayerActive(active);
                 if (active) dismissOperatorDialog();
+                if (active && speed != null) speed.cancel();
             });
         }
         @JavascriptInterface public void exportJson(String filename, String json) {
@@ -475,6 +498,7 @@ public final class MainActivity extends Activity {
     }
     private void phoneKey(String key) {
         if (!foreground || praying || webView == null) return;
+        if (power != null && power.isBlack()) { power.operator(); if ("menu".equals(key) || "ok".equals(key)) openControls(); return; }
         dismissOperatorDialog(); if (power != null) power.operator();
         if ("back".equals(key)) { onBackPressed(); return; }
         if ("menu".equals(key)) { injectShortcut(false); return; }
@@ -494,7 +518,8 @@ public final class MainActivity extends Activity {
         if (message == null) return;
         final String bounded = message.substring(0, Math.min(message.length(), 1500));
         evaluate("(function(){if(document.body&&document.body.classList.contains('praying'))return;"
-                + "var n=document.getElementById('settingsMessage');if(n)n.textContent=" + JSONObject.quote(bounded) + ";})()");
+                + "var text=" + JSONObject.quote(bounded) + ";var n=document.getElementById('settingsMessage');if(n)n.textContent=text;"
+                + "window.dispatchEvent(new CustomEvent('mosque-native-notice',{detail:{message:text}}));})()");
     }
 
     private RoleManager homeRoleManager() {
@@ -655,6 +680,7 @@ public final class MainActivity extends Activity {
     @Override public void onBackPressed() {
         if (praying) return;
         webView.evaluateJavascript("(function(){if(document.body&&document.body.classList.contains('praying'))return 'prayer';"
+                + "if(window.MosqueControl&&window.MosqueControl.handleBack())return 'control';"
                 + "if(window.MosqueTV&&window.MosqueTV.handleBack&&window.MosqueTV.handleBack())return 'dialog';"
                 + "var d=document.getElementById('settingsDialog');if(d&&d.open){var b=document.getElementById('cancelButton');"
                 + "if(b)b.click();else d.close();return 'dialog';}return 'exit';})()", state -> {
@@ -687,7 +713,7 @@ public final class MainActivity extends Activity {
                 || key == KeyEvent.KEYCODE_BACK || key == KeyEvent.KEYCODE_DPAD_UP || key == KeyEvent.KEYCODE_DPAD_DOWN
                 || key == KeyEvent.KEYCODE_DPAD_LEFT || key == KeyEvent.KEYCODE_DPAD_RIGHT)) {
             wakingKey = key; power.operator();
-            if (key == KeyEvent.KEYCODE_DPAD_CENTER || key == KeyEvent.KEYCODE_ENTER || key == KeyEvent.KEYCODE_MENU) injectShortcut(false);
+            if (key == KeyEvent.KEYCODE_DPAD_CENTER || key == KeyEvent.KEYCODE_ENTER || key == KeyEvent.KEYCODE_MENU) openControls();
             return true;
         }
         return super.dispatchKeyEvent(event);
@@ -721,6 +747,10 @@ public final class MainActivity extends Activity {
         evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'" + (maintenance ? "m" : ",")
                 + "',code:'" + (maintenance ? "KeyM" : "Comma") + "',ctrlKey:true,altKey:"
                 + maintenance + ",bubbles:true,cancelable:true}))");
+    }
+    private void openControls() {
+        evaluate("(function(){if(window.MosqueTV&&window.MosqueTV.isOpen())return;"
+                + "if(window.MosqueControl)window.MosqueControl.open();})()");
     }
 
     private void createErrorPanel(FrameLayout frame) {
@@ -767,6 +797,7 @@ public final class MainActivity extends Activity {
         foreground = false;
         wakingKey = -1;
         menuDown = false; handler.removeCallbacks(menuLongPress); dismissOperatorDialog();
+        if (speed != null) speed.cancel();
         if (webView != null) webView.onPause();
         super.onPause();
     }
@@ -779,6 +810,7 @@ public final class MainActivity extends Activity {
     @Override protected void onDestroy() {
         foreground = false;
         if (power != null) power.destroy();
+        if (speed != null) speed.destroy();
         if (updater != null) updater.destroy();
         if (phone != null) phone.stop();
         handler.removeCallbacks(menuLongPress); dismissOperatorDialog();

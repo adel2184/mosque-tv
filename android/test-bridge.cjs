@@ -12,6 +12,7 @@ function test(name,fn){try{fn();checks.push({name,pass:true});}catch(error){chec
 function runtime(options={}){
   const ids=new Map(),docListeners=new Map(),windowListeners=new Map(),observers=[],readers=[],exports=[],prayers=[],revoked=[],nativeCalls=[];
   let serial=0,document,flushingMutations=false,homeJSON=options.homeStatusJSON===undefined?JSON.stringify(options.homeStatus||{isDefaultHome:false,canRequestHomeRole:true,canOpenHomeSettings:true}):options.homeStatusJSON;
+  let powerJSON=JSON.stringify(options.powerStatus||{mode:'always',start:'04:00',end:'23:00',active:true,sleepMinutes:15});
   const pendingMutations=[];
   function fire(listeners,name,event){event.type=name;event.preventDefault=event.preventDefault||function(){this.defaultPrevented=true;};for(const listener of listeners.get(name)||[])listener(event);return event;}
   function mutation(target,type,attributeName){
@@ -55,6 +56,8 @@ function runtime(options={}){
   const URL={createObjectURL:()=> 'blob:simulated/'+(++serial),revokeObjectURL:url=>revoked.push(url)};
   const originalCreate=URL.createObjectURL;
   const native={exportJson(name,json){if(options.throwNative)throw Error('Simulated native picker failure');exports.push({name,json});},prayerState(active){prayers.push(active);},homeStatus(){nativeCalls.push({method:'homeStatus'});if(options.throwHomeStatus)throw Error('Simulated HOME status failure');return homeJSON;},requestHomeRole(){nativeCalls.push({method:'requestHomeRole'});return true;},openHomeSettings(){nativeCalls.push({method:'openHomeSettings'});return true;},openSystemSettings(){nativeCalls.push({method:'openSystemSettings'});return true;}};
+  native.powerStatus=()=>powerJSON;
+  native.savePower=value=>nativeCalls.push({method:'savePower',value:JSON.parse(value)});
   const sandbox={Element,MutationObserver,FileReader,Blob,URL,document,Map,Array,console,getComputedStyle:node=>({visibility:node.style.visibility||'visible',display:node.hidden?'none':'block'}),addEventListener(name,listener){if(!windowListeners.has(name))windowListeners.set(name,[]);windowListeners.get(name).push(listener);}};
   if(!options.noNative)sandbox.MosqueAndroid=native;sandbox.window=sandbox;
   vm.runInNewContext(source,sandbox,{filename:file,timeout:3000});
@@ -65,8 +68,10 @@ function runtime(options={}){
     key(key,extra={}){return fire(docListeners,'keydown',{key,ctrlKey:false,altKey:false,defaultPrevented:false,...extra});},
     result(detail){fire(windowListeners,'mosque-native-export-result',{detail});flushMutations();},
     homeResult(detail={}){fire(windowListeners,'mosque-native-home-result',{detail});flushMutations();},
+    powerResult(detail={}){fire(windowListeners,'mosque-native-power-result',{detail});flushMutations();},
     focusWindow(){fire(windowListeners,'focus',{});flushMutations();},
     setHomeStatus(value){homeJSON=typeof value==='string'?value:JSON.stringify(value);},
+    setPowerStatus(value){powerJSON=JSON.stringify(value);},
     openSettings(){dialog.open=true;mutation(dialog,'attributes','open');flushMutations();},
     redrawSettings(){settingsBody.replaceChildren();mutation(dialog,'childList');flushMutations();},
     flushRead(error=false){const reader=readers.shift();if(!reader)throw Error('No pending FileReader');if(error)reader.onerror();else{reader.result=reader.blob.text;reader.onload();}},
@@ -148,6 +153,27 @@ test('Optional HOME explanations are bounded literal text and never bypass manda
   app.setHomeStatus({isDefaultHome:'true',canRequestHomeRole:false,canOpenHomeSettings:true,message:long});app.homeResult();assert(status.textContent.includes('تعذر قراءة'));eq(app.document.getElementById('tv-request-home').disabled,true);
   eq(app.sandbox.MosqueTVNative.getSections().find(section=>section.id==='tv-home').rows[0].value,'تعذر قراءة إعداد واجهة البدء.');
   app.setHomeStatus({isDefaultHome:false,canRequestHomeRole:true,canOpenHomeSettings:true,message:{unsafe:true}});app.focusWindow();assert(status.textContent.includes('لم يُختر'));
+});
+const powerRows=app=>app.sandbox.MosqueTVNative.getSections().find(section=>section.id==='tv-power').rows;
+const powerRow=(rows,id)=>{const row=rows.find(row=>row.id==='tv-power-'+id);assert(row,'Missing actual power row '+id);return row;};
+test('Passive power/countdown notifications preserve all unsaved power fields and never save them automatically',()=>{
+  const app=runtime(),rows=powerRows(app);powerRow(rows,'mode').commit('scheduled');powerRow(rows,'start').commit('05:07');powerRow(rows,'end').commit('22:30');
+  app.setPowerStatus({mode:'always',start:'04:00',end:'23:00',sleepMinutes:14});
+  for(const detail of [{success:true,sleepMinutes:14},{success:true,message:'تحديث حالة المؤقت'},{success:false,message:'تعذر حفظ إعداد آخر'}]){
+    app.powerResult(detail);const current=powerRows(app);eq(powerRow(current,'mode').value,'scheduled');eq(powerRow(current,'start').value,'05:07');eq(powerRow(current,'end').value,'22:30');
+  }
+  eq(app.nativeCalls.filter(call=>call.method==='savePower').length,0);
+});
+test('Only an explicit saved power result discards the old draft and reloads the native saved settings',()=>{
+  const app=runtime(),rows=powerRows(app);powerRow(rows,'mode').commit('scheduled');powerRow(rows,'start').commit('05:07');powerRow(rows,'end').commit('22:30');
+  app.setPowerStatus({mode:'system',start:'06:00',end:'21:00',sleepMinutes:0});app.powerResult({success:true,saved:true,message:'حُفظ إعداد الطاقة'});
+  const current=powerRows(app);eq(powerRow(current,'mode').value,'system');eq(powerRow(current,'start').value,'06:00');eq(powerRow(current,'end').value,'21:00');eq(app.nativeCalls.filter(call=>call.method==='savePower').length,0);
+});
+test('A held time-editor closure remains usable across a saved-status refresh and its own save sends the edited snapshot',()=>{
+  const app=runtime(),old=powerRows(app);powerRow(old,'mode').commit('scheduled');const start=powerRow(old,'start'),end=powerRow(old,'end'),save=powerRow(old,'save');
+  app.setPowerStatus({mode:'system',start:'08:00',end:'20:00'});app.powerResult({success:true,saved:true});const refreshed=powerRows(app);eq(powerRow(refreshed,'mode').value,'system');
+  start.commit('05:20');end.commit('22:40');const reattached=powerRows(app);eq(powerRow(reattached,'mode').value,'scheduled');eq(powerRow(reattached,'start').value,'05:20');eq(powerRow(reattached,'end').value,'22:40');save.action();
+  const writes=app.nativeCalls.filter(call=>call.method==='savePower');eq(writes.length,1);eq(JSON.stringify(writes[0].value),JSON.stringify({mode:'scheduled',start:'05:20',end:'22:40'}));
 });
 const report={executedAt:new Date().toISOString(),sourceSHA256:crypto.createHash('sha256').update(source).digest('hex'),method:'Actual android/tv-bridge.js evaluated with a minimal simulated DOM, queued MutationObserver records, Blob/FileReader, and native HOME/status interface. No Android, WebView, HOME-role chooser, TV remote, browser, or SAF provider was executed.',passed:checks.filter(check=>check.pass).length,total:checks.length,failed:checks.filter(check=>!check.pass).length,checks};
 fs.writeFileSync(path.join(__dirname,'bridge-test-results.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));if(report.failed)process.exitCode=1;

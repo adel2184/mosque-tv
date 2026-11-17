@@ -42,3 +42,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node android/test-power.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node android/test-control-center.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node android/test-network-speed.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

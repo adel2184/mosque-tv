@@ -24,6 +24,8 @@ final class PowerController {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final TextView curtain;
     private long operatorUntil;
+    private volatile long sleepAt;
+    private volatile boolean manualBlack;
     private boolean closed;
     private boolean prayer;
     private String lastState = "";
@@ -56,11 +58,12 @@ final class PowerController {
     JSONObject status() {
         JSONObject result = new JSONObject();
         String mode = preferences.getString("mode", "always");
-        boolean active = !"scheduled".equals(mode) || scheduledNow();
+        boolean active = !manualBlack && (!"scheduled".equals(mode) || scheduledNow());
         try {
             result.put("mode", mode).put("start", preferences.getString("start", "04:00"))
                     .put("end", preferences.getString("end", "23:00")).put("active", active)
-                    .put("screenBlack", !prayer && !active && SystemClock.elapsedRealtime() >= operatorUntil)
+                    .put("screenBlack", !prayer && (manualBlack || (!active && SystemClock.elapsedRealtime() >= operatorUntil)))
+                    .put("sleepMinutes", sleepAt == 0 ? 0 : Math.max(1, (sleepAt - SystemClock.elapsedRealtime() + 59_999L) / 60_000L))
                     .put("message", "system".equals(mode) ? "السكون حسب إعدادات التلفزيون."
                             : "scheduled".equals(mode) ? "ساعات العرض بتوقيت السعودية؛ خارجها عرض أسود مع بقاء التلفزيون مستيقظًا. هذا لا يطفئ لوحة الشاشة."
                             : "تشغيل مستمر: منع السكون وشاشة التوقف أثناء ظهور تطبيق الجامع. مؤقت إطفاء TCL مستقل.");
@@ -75,7 +78,10 @@ final class PowerController {
                     || minute(start) < 0 || minute(end) < 0 || ("scheduled".equals(mode) && start.equals(end))) throw new IllegalArgumentException();
             if (!preferences.edit().putString("mode", mode).putString("start", start).putString("end", end).commit()) throw new IllegalStateException();
             operatorUntil = SystemClock.elapsedRealtime() + 5 * 60_000L;
-            apply(); host.changed(status());
+            apply();
+            JSONObject result = status();
+            result.put("saved", true);
+            host.changed(result);
         } catch (Exception error) {
             JSONObject result = status();
             try { result.put("error", true).put("message", "لم تُحفظ إعدادات الطاقة. اختر وضعًا صحيحًا ووقتي بداية ونهاية مختلفين بصيغة 24 ساعة."); } catch (org.json.JSONException ignored) { }
@@ -84,14 +90,22 @@ final class PowerController {
     }
     boolean isBlack() { return curtain.getVisibility() == View.VISIBLE; }
     void prayer(boolean active) { prayer = active; apply(); }
-    void operator() { operatorUntil = SystemClock.elapsedRealtime() + 5 * 60_000L; apply(); }
+    void operator() { if (manualBlack) { manualBlack = false; sleepAt = 0; } operatorUntil = SystemClock.elapsedRealtime() + 5 * 60_000L; apply(); }
+    void sleep(int minutes) {
+        if (minutes != 0 && minutes != 15 && minutes != 30 && minutes != 60 && minutes != 90) return;
+        manualBlack = false; sleepAt = minutes == 0 ? 0 : SystemClock.elapsedRealtime() + minutes * 60_000L;
+        apply(); host.changed(status());
+    }
+    void displayOff() { sleepAt = 0; manualBlack = true; operatorUntil = 0; apply(); }
     void resume() { apply(); }
     private void apply() {
         if (closed || activity.isFinishing() || activity.isDestroyed()) return;
         String mode = preferences.getString("mode", "always");
         if ("system".equals(mode)) activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         else activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        boolean black = !prayer && "scheduled".equals(mode) && !scheduledNow() && SystemClock.elapsedRealtime() >= operatorUntil;
+        if (sleepAt > 0 && SystemClock.elapsedRealtime() >= sleepAt) { sleepAt = 0; manualBlack = true; operatorUntil = 0; }
+        boolean black = !prayer && (manualBlack || ("scheduled".equals(mode) && !scheduledNow() && SystemClock.elapsedRealtime() >= operatorUntil));
+        curtain.setText(manualBlack ? "العرض متوقف مؤقتًا\nاضغط أي سهم لاستئنافه، أو اختيار لفتح مركز التحكم" : "خارج ساعات العرض\nاضغط اختيار أو MENU لفتح مركز التحكم");
         curtain.setVisibility(black ? View.VISIBLE : View.GONE);
         JSONObject state = status(); String signature = state.toString();
         if (!signature.equals(lastState)) { lastState = signature; host.changed(state); }

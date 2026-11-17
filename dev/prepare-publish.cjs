@@ -3,7 +3,7 @@
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const root=path.resolve(__dirname,'..'),out=path.join(root,'publish');fs.mkdirSync(out,{recursive:true});
 const selected=new Set(['.gitignore','README.md','README_AR.md','DATA_SOURCES.md','TEST_REPORT.md','index.html','test.html']);
-const add=(folder)=>{for(const item of fs.readdirSync(path.join(root,folder),{withFileTypes:true})){const file=folder+'/'+item.name;if(item.isDirectory()){if(!['build','dist','history'].includes(item.name))add(file);}else if(!/\.(apk|zip|p12|jks|keystore|pyc|tgz)$/i.test(file)&&!/(^|\/)password\.txt$|bridge-test-results\.json|tv-settings-test-results\.json|\/tree\.json$/.test(file))selected.add(file);}};
+const add=(folder)=>{for(const item of fs.readdirSync(path.join(root,folder),{withFileTypes:true})){const file=folder+'/'+item.name;if(item.isDirectory()){if(!['build','dist','history'].includes(item.name))add(file);}else if(!/\.(apk|zip|p12|jks|keystore|pyc|tgz)$/i.test(file)&&!/(^|\/)password\.txt$|(?:bridge|tv-settings|control-center)-test-results\.json|\/tree\.json$/.test(file))selected.add(file);}};
 for(const folder of ['android','assets','data','dev','licenses','docs','.github'])add(folder);
 const paths=Array.from(selected).sort();
 const manifest=[],text=[],binary=[];

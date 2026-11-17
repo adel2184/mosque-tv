@@ -6,7 +6,7 @@ const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
 let jsonBlocks=0;
 for(const match of html.matchAll(/<script[^>]*type="application\/json"[^>]*>([\s\S]*?)<\/script>/g)){JSON.parse(match[1]);jsonBlocks++;}
 if(jsonBlocks!==6)throw Error('Expected six embedded JSON blocks.');
-const source=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');new Function(source);
+const source=['app.js','control-center.js'].map(file=>fs.readFileSync(path.join(__dirname,file),'utf8')).join('\n');new Function(source);
 if(/\b(?:fetch|XMLHttpRequest|importScripts)\s*\(/.test(source)||/\b(?:import|export)\s/.test(source))throw Error('Prohibited runtime dependency.');
 if(/<(?:script|link)\b[^>]*(?:src|href)=["']https?:/i.test(html))throw Error('External core asset.');
 const slides=JSON.parse(fs.readFileSync(path.join(__dirname,'slides.json'),'utf8'));

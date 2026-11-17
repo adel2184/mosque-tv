@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing tag matching manifest version, for example v2.0.3
+        description: Existing tag matching manifest version, for example v2.1.0
         required: true
         type: string
 permissions:
@@ -70,6 +70,10 @@ jobs:
           node android/test-release.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node android/test-power.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node android/test-control-center.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node android/test-network-speed.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node android/build.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
