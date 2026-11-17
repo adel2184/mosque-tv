@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "mosque": {
+    "enabled": true,
+    "fields": {
+      "name": {"value":"جامع لطيفة الخالدي - ضاحية الملك فهد","visible":true},
+      "address": {"value":"ضاحية الملك فهد، الدمام","visible":true},
+      "subtitle": {"value":"","visible":false},
+      "imam": {"value":"","visible":false},
+      "contact": {"value":"","visible":false},
+      "announcement": {"value":"","visible":false}
+    },
+    "custom": []
+  },
+  "iqama": {"offsets":{"fajr":25,"dhuhr":20,"asr":20,"maghrib":10,"isha":20},"confirmed":false,"overrides":[]},
+  "prayerModeMinutes":15,
+  "slideSeconds":20,
+  "digitStyle":"western",
+  "location":{"latitude":26.4207,"longitude":50.0888},
+  "donation":{
+    "visible":true,
+    "title":"تجديد الفرش وإعادة تنجيد سنادات الظهر",
+    "description":"ساهم في تجديد فرش الجامع وإعادة تنجيد سنادات الظهر، لراحة المصلين وطمأنينتهم."
+  }
+}

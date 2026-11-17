@@ -1,0 +1,26 @@
+{
+  "runDate": "2026-11-16",
+  "node": "v24.22.1",
+  "targetYear": 2026,
+  "totalRecords": 732,
+  "yearCounts": {
+    "2026": 365,
+    "2027": 365
+  },
+  "guards": [
+    "2025-12-31",
+    "2028-01-01"
+  ],
+  "checks": [
+    "no duplicate dates",
+    "continuous exact dates",
+    "normal/leap year counts",
+    "six HH:mm fields",
+    "strict chronological times",
+    "Isha 90/120 minute intervals",
+    "metadata matches coverage"
+  ],
+  "nativeCalendarCrossCheckedDays": 732,
+  "nativeCalendarFixtures": 56,
+  "officialTimetableComparison": "NOT PERFORMED — dataset remains calculated and requires review."
+}

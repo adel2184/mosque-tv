@@ -1,0 +1,10 @@
+Noto Sans Arabic, Google Fonts distribution, v33.
+Font source project: https://github.com/notofonts/arabic
+License copy: https://github.com/google/fonts/blob/main/ofl/notosansarabic/OFL.txt
+CSS requested 2026-11-16 from:
+https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@400..700&display=swap
+Bundled local subsets, embedded as data URIs in index.html:
+Arabic: https://fonts.gstatic.com/s/notosansarabic/v33/nwpCtLGrOAZMl5nJ_wfgRg3DrWFZWsnVBJ_sS6tlqHHFlj4wv4r4xA.woff2
+Latin: https://fonts.gstatic.com/s/notosansarabic/v33/nwpCtLGrOAZMl5nJ_wfgRg3DrWFZWsnVBJ_sS6tlqHHFlj41v4o.woff2
+Weights 400-700, normal style. SIL Open Font License 1.1 (OFL.txt).
+No font request is made at application runtime.

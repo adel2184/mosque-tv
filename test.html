@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>اختبارات شاشة الجامع المحلية</title>
+<style>
+body{background:#0b151c;color:#f2ede2;font:18px/1.8 Tahoma,Arial,sans-serif;max-width:1100px;margin:40px auto;padding:0 24px}h1{font-size:30px}button{background:#d7bc7a;color:#102018;border:0;border-radius:8px;padding:12px 24px;font:inherit;cursor:pointer}.pass{color:#9ed5b7}.fail{color:#ffaaa2}li{padding:8px;border-bottom:1px solid #ffffff15}iframe{width:1px;height:1px;position:absolute;opacity:0;pointer-events:none}.notice{color:#c5c7bf}pre{direction:ltr;white-space:pre-wrap}a{color:#d7bc7a}
+</style>
+<h1>اختبارات شاشة الجامع المحلية</h1>
+<p>تشغّل هذه الصفحة حالات التحقق على منطق التطبيق الفعلي داخل ملف <a href="index.html">index.html</a>، دون خادم أو اتصال بالإنترنت. لا تغيّر الساعة الحقيقية أو الإعدادات المحفوظة.</p>
+<p class="notice">هذه اختبارات برمجية، ويحتاج وضوح العرض وملء الشاشة وتشغيل الجهاز إلى فحص عملي منفصل. افتح هذه الصفحة في المتصفح نفسه الذي سيشغّل الشاشة.</p>
+<button id="run" disabled>تشغيل الاختبارات</button>
+<p id="status" aria-live="polite">جارٍ تحميل التطبيق في وضع الاختبار…</p>
+<ol id="results"></ol>
+<iframe id="application" title="نسخة التطبيق للاختبار" src="index.html?test=1"></iframe>
+<script src="dev/acceptance.js"></script>
+<script>
+'use strict';
+const frame=document.getElementById('application');
+const pending=new Map();let serial=0;
+function rpc(request){return new Promise((resolve,reject)=>{const id=++serial;const timeout=setTimeout(()=>{pending.delete(id);reject(new Error('لم يستجب التطبيق لطلب الاختبار'));},15000);pending.set(id,{resolve,reject,timeout});frame.contentWindow.postMessage({...request,type:'mosque-test-rpc',id},'*');});}
+window.addEventListener('message',event=>{if(event.source!==frame.contentWindow||event.data?.type!=='mosque-test-result')return;const job=pending.get(event.data.id);if(!job)return;clearTimeout(job.timeout);pending.delete(event.data.id);event.data.ok?job.resolve(event.data.value):job.reject(new Error(event.data.error));});
+frame.addEventListener('load',async()=>{try{await rpc({property:'defaults'});document.getElementById('run').disabled=false;document.getElementById('status').textContent='التطبيق جاهز. اضغط لتشغيل الاختبارات.';}catch(error){document.getElementById('status').textContent=error.message;}});
+document.getElementById('run').addEventListener('click',async()=>{const button=document.getElementById('run');button.disabled=true;document.getElementById('results').replaceChildren();document.getElementById('status').textContent='جارٍ التحقق…';try{const report=await runMosqueAcceptance((method,...args)=>rpc({method,args}),property=>rpc({property}));report.results.forEach(result=>{const li=document.createElement('li');li.className=result.pass?'pass':'fail';li.textContent=(result.pass?'نجح: ':'لم ينجح: ')+result.name+(result.error?' — '+result.error:'');document.getElementById('results').append(li);});document.getElementById('status').textContent='النتيجة: '+report.passed+' من '+report.total+'؛ الإخفاقات: '+report.failed;window.mosqueTestReport=report;}catch(error){document.getElementById('status').textContent='تعذر استكمال الاختبار: '+error.message;}finally{button.disabled=false;}});
+</script>
+</html>

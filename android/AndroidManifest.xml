@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="sa.mosque.display"
+    android:versionCode="3"
+    android:versionName="2.0.0">
+    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="35" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
+        <intent><action android:name="android.settings.HOME_SETTINGS" /></intent>
+        <intent><action android:name="android.settings.MANAGE_DEFAULT_APPS_SETTINGS" /></intent>
+        <intent><action android:name="android.settings.SETTINGS" /></intent>
+        <intent><action android:name="android.settings.WIFI_SETTINGS" /></intent>
+        <intent><action android:name="android.settings.WIRELESS_SETTINGS" /></intent>
+        <intent><action android:name="android.settings.BLUETOOTH_SETTINGS" /></intent>
+        <intent><action android:name="com.google.android.intent.action.CONNECT_INPUT" /></intent>
+        <intent><action android:name="android.settings.SOUND_SETTINGS" /></intent>
+        <intent><action android:name="android.settings.DISPLAY_SETTINGS" /></intent>
+        <intent><action android:name="android.settings.DREAM_SETTINGS" /></intent>
+        <intent><action android:name="android.settings.POWER_USAGE_SUMMARY" /></intent>
+        <intent><action android:name="android.settings.MANAGE_APPLICATIONS_SETTINGS" /></intent>
+        <intent><action android:name="android.settings.APPLICATION_DETAILS_SETTINGS" /><data android:scheme="package" /></intent>
+        <package android:name="com.tcl.miracast" /><package android:name="com.mediatek.wfd" />
+        <package android:name="com.softwinner.miracastReceiver" /><package android:name="com.homwee.mmp.screenshare" /><package android:name="com.xiaomi.mitv.smartshare" />
+        <package android:name="com.tcl.bi" /><package android:name="com.tcl.overseasappshow" />
+        <package android:name="com.tcl.messagebox" /><package android:name="com.tcl.esticker" /><package android:name="com.tcl.exhibit" />
+        <package android:name="com.google.android.tvrecommendations" /><package android:name="com.google.android.feedback" /><package android:name="com.google.android.play.games" />
+    </queries>
+
+    <!-- Display remains local. Network is used only for explicit updates, paired LAN remote and authorized loopback setup. -->
+    <application
+        android:allowBackup="false"
+        android:banner="@drawable/tv_banner"
+        android:hardwareAccelerated="true"
+        android:icon="@drawable/mosque_icon"
+        android:label="شاشة جامع لطيفة الخالدي"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme"
+        android:usesCleartextTraffic="false">
+        <activity android:name=".DeviceSetupActivity" android:exported="false" android:screenOrientation="landscape" />
+        <receiver android:name=".UpdateInstallReceiver" android:exported="false" />
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
+            android:enableOnBackInvokedCallback="false"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="landscape"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Optional HOME role is granted only through the user's system chooser. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

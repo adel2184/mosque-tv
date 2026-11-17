@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Original code-native mosque mark, matching the offline display's palette. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="192dp"
+    android:height="192dp"
+    android:viewportWidth="192"
+    android:viewportHeight="192">
+    <path android:fillColor="#080F14"
+        android:pathData="M24,0H168Q192,0 192,24V168Q192,192 168,192H24Q0,192 0,168V24Q0,0 24,0Z" />
+    <path android:fillColor="#142C25"
+        android:pathData="M35,13H157Q179,13 179,35V157Q179,179 157,179H35Q13,179 13,157V35Q13,13 35,13Z" />
+    <path android:fillColor="#0D1D20" android:strokeColor="#365447"
+        android:strokeWidth="1.5"
+        android:pathData="M96,25A71,71 0,1 1,96,167A71,71 0,1 1,96,25Z" />
+    <path android:fillColor="#00000000" android:strokeColor="#C5AF76"
+        android:strokeWidth="3.5" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M29,153H163M40,145V76M152,145V76M34,72H46M146,72H158M40,66V48M152,66V48M36,44H44M148,44H156M56,145V101C56,78 78,64 96,45C114,64 136,78 136,101V145M79,145V113C79,101 88,94 96,87C104,94 113,101 113,113V145M96,43V39" />
+    <path android:fillColor="#C5AF76"
+        android:pathData="M102,18C91,22 89,36 101,40C85,41 81,26 91,19C95,17 98,17 102,18Z" />
+</vector>

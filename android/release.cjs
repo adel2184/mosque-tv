@@ -1,0 +1,31 @@
+/* Generate public release metadata from the exact signed APK; never reads signing secrets. */
+'use strict';
+const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
+const root=path.resolve(__dirname,'..');
+const ORIGINAL_CERT='4cb9564d63fd3f037d12e2ed98af1bf7255a7fb7ef53d6a57aba020b5e9b061e';
+function generate(base=root){
+  const dist=path.join(base,'android/dist');
+  const manifest=fs.readFileSync(path.join(base,'android/AndroidManifest.xml'),'utf8');
+  const attr=name=>{const match=manifest.match(new RegExp('\\b'+name+'="([^"]+)"'));if(!match)throw Error('Missing manifest '+name);return match[1];};
+  const versionName=attr('android:versionName'),versionCode=Number(attr('android:versionCode')),minSdk=Number(attr('android:minSdkVersion'));
+  if(!Number.isSafeInteger(versionCode)||versionCode<1||minSdk<24||!/^\d+\.\d+\.\d+$/.test(versionName))throw Error('Invalid release version/minSdk');
+  const report=JSON.parse(fs.readFileSync(path.join(dist,'build-report.json'),'utf8'));
+  const name='mosque-display-tv.apk',apk=path.join(dist,name),bytes=fs.readFileSync(apk);
+  const sha=crypto.createHash('sha256').update(bytes).digest('hex');
+  if(report.apk!==name||report.package!=='sa.mosque.display'||report.minSdk!==minSdk||report.sha256!==sha||report.bytes!==bytes.length||bytes.length>33554432||bytes.length===0)throw Error('APK/build report mismatch');
+  const signing=report.signatureVerification||'';
+  if(!/^Verified using v2 scheme \(APK Signature Scheme v2\): true\r?$/m.test(signing)||!/^Number of signers: 1\r?$/m.test(signing)||!new RegExp('^Signer #1 certificate SHA-256 digest: '+ORIGINAL_CERT+'\\r?$','m').test(signing))throw Error('Release must use the original verified signing certificate');
+  const badging=report.badging||'';
+  if(!badging.includes("name='sa.mosque.display'")||!badging.includes("versionCode='"+versionCode+"'")||!badging.includes("versionName='"+versionName+"'")||!badging.includes("minSdkVersion:'"+minSdk+"'"))throw Error('Packaged APK version differs from manifest');
+  const tag='v'+versionName;
+  if(process.env.RELEASE_TAG&&process.env.RELEASE_TAG!==tag)throw Error('Release tag must equal '+tag);
+  const feed={schemaVersion:1,packageName:'sa.mosque.display',versionName,versionCode,minSdk,apk:{name,size:bytes.length,sha256:sha}};
+  fs.writeFileSync(path.join(dist,'update.json'),JSON.stringify(feed,null,2)+'\n');
+  const checks=[name,'update.json'].map(file=>crypto.createHash('sha256').update(fs.readFileSync(path.join(dist,file))).digest('hex')+'  '+file).join('\n')+'\n';
+  fs.writeFileSync(path.join(dist,'SHA256SUMS.txt'),checks);
+  fs.writeFileSync(path.join(dist,'RELEASE_NOTES_AR.txt'),'الإصدار '+versionName+' — الرمز '+versionCode+'\n\nتثبيت تحديث للتطبيق الحالي من دون إلغاء تثبيته. احتفظ بنسخة مصدّرة من الإعدادات. التشغيل اليومي والمواقيت والمحتوى المحلي تعمل دون إنترنت؛ البحث عن تحديث وتنزيله يحتاجان اتصالًا مؤقتًا. يتطلب التثبيت موافقة المستخدم في شاشة Android.\n\nلم يُختبر هذا الإصدار على تلفاز فعلي ضمن البناء الآلي. راجع دليل التثبيت والتقرير المرفقين.\n');
+  console.log(JSON.stringify({tag,versionName,versionCode,minSdk,bytes:bytes.length,sha256:sha,certificateSHA256:ORIGINAL_CERT},null,2));
+  return feed;
+}
+if(require.main===module)generate();
+module.exports={generate,ORIGINAL_CERT};

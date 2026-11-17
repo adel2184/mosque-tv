@@ -1,0 +1,342 @@
+{
+  "source": "https://github.com/dralshehri/hijridate/blob/v2.3.0/src/hijridate/ummalqura.py",
+  "note": "Reference vectors extracted from vendored verified month-start data; independently cross-checked against Node Intl islamic-umalqura, not religious sighting declarations.",
+  "fixtures": [
+    {
+      "date": "2025-12-21",
+      "year": 1447,
+      "month": 7,
+      "day": 1
+    },
+    {
+      "date": "2025-12-31",
+      "year": 1447,
+      "month": 7,
+      "day": 11
+    },
+    {
+      "date": "2026-01-01",
+      "year": 1447,
+      "month": 7,
+      "day": 12
+    },
+    {
+      "date": "2026-01-19",
+      "year": 1447,
+      "month": 7,
+      "day": 30
+    },
+    {
+      "date": "2026-01-20",
+      "year": 1447,
+      "month": 8,
+      "day": 1
+    },
+    {
+      "date": "2026-02-17",
+      "year": 1447,
+      "month": 8,
+      "day": 29
+    },
+    {
+      "date": "2026-02-18",
+      "year": 1447,
+      "month": 9,
+      "day": 1
+    },
+    {
+      "date": "2026-03-19",
+      "year": 1447,
+      "month": 9,
+      "day": 30
+    },
+    {
+      "date": "2026-03-20",
+      "year": 1447,
+      "month": 10,
+      "day": 1
+    },
+    {
+      "date": "2026-04-17",
+      "year": 1447,
+      "month": 10,
+      "day": 29
+    },
+    {
+      "date": "2026-04-18",
+      "year": 1447,
+      "month": 11,
+      "day": 1
+    },
+    {
+      "date": "2026-05-17",
+      "year": 1447,
+      "month": 11,
+      "day": 30
+    },
+    {
+      "date": "2026-05-18",
+      "year": 1447,
+      "month": 12,
+      "day": 1
+    },
+    {
+      "date": "2026-06-15",
+      "year": 1447,
+      "month": 12,
+      "day": 29
+    },
+    {
+      "date": "2026-06-16",
+      "year": 1448,
+      "month": 1,
+      "day": 1
+    },
+    {
+      "date": "2026-07-14",
+      "year": 1448,
+      "month": 1,
+      "day": 29
+    },
+    {
+      "date": "2026-07-15",
+      "year": 1448,
+      "month": 2,
+      "day": 1
+    },
+    {
+      "date": "2026-08-13",
+      "year": 1448,
+      "month": 2,
+      "day": 30
+    },
+    {
+      "date": "2026-08-14",
+      "year": 1448,
+      "month": 3,
+      "day": 1
+    },
+    {
+      "date": "2026-09-11",
+      "year": 1448,
+      "month": 3,
+      "day": 29
+    },
+    {
+      "date": "2026-09-12",
+      "year": 1448,
+      "month": 4,
+      "day": 1
+    },
+    {
+      "date": "2026-10-11",
+      "year": 1448,
+      "month": 4,
+      "day": 30
+    },
+    {
+      "date": "2026-10-12",
+      "year": 1448,
+      "month": 5,
+      "day": 1
+    },
+    {
+      "date": "2026-11-10",
+      "year": 1448,
+      "month": 5,
+      "day": 30
+    },
+    {
+      "date": "2026-11-11",
+      "year": 1448,
+      "month": 6,
+      "day": 1
+    },
+    {
+      "date": "2026-12-09",
+      "year": 1448,
+      "month": 6,
+      "day": 29
+    },
+    {
+      "date": "2026-12-10",
+      "year": 1448,
+      "month": 7,
+      "day": 1
+    },
+    {
+      "date": "2027-01-08",
+      "year": 1448,
+      "month": 7,
+      "day": 30
+    },
+    {
+      "date": "2027-01-09",
+      "year": 1448,
+      "month": 8,
+      "day": 1
+    },
+    {
+      "date": "2027-02-07",
+      "year": 1448,
+      "month": 8,
+      "day": 30
+    },
+    {
+      "date": "2027-02-08",
+      "year": 1448,
+      "month": 9,
+      "day": 1
+    },
+    {
+      "date": "2027-03-08",
+      "year": 1448,
+      "month": 9,
+      "day": 29
+    },
+    {
+      "date": "2027-03-09",
+      "year": 1448,
+      "month": 10,
+      "day": 1
+    },
+    {
+      "date": "2027-04-07",
+      "year": 1448,
+      "month": 10,
+      "day": 30
+    },
+    {
+      "date": "2027-04-08",
+      "year": 1448,
+      "month": 11,
+      "day": 1
+    },
+    {
+      "date": "2027-05-06",
+      "year": 1448,
+      "month": 11,
+      "day": 29
+    },
+    {
+      "date": "2027-05-07",
+      "year": 1448,
+      "month": 12,
+      "day": 1
+    },
+    {
+      "date": "2027-06-05",
+      "year": 1448,
+      "month": 12,
+      "day": 30
+    },
+    {
+      "date": "2027-06-06",
+      "year": 1449,
+      "month": 1,
+      "day": 1
+    },
+    {
+      "date": "2027-07-04",
+      "year": 1449,
+      "month": 1,
+      "day": 29
+    },
+    {
+      "date": "2027-07-05",
+      "year": 1449,
+      "month": 2,
+      "day": 1
+    },
+    {
+      "date": "2027-08-02",
+      "year": 1449,
+      "month": 2,
+      "day": 29
+    },
+    {
+      "date": "2027-08-03",
+      "year": 1449,
+      "month": 3,
+      "day": 1
+    },
+    {
+      "date": "2027-09-01",
+      "year": 1449,
+      "month": 3,
+      "day": 30
+    },
+    {
+      "date": "2027-09-02",
+      "year": 1449,
+      "month": 4,
+      "day": 1
+    },
+    {
+      "date": "2027-09-30",
+      "year": 1449,
+      "month": 4,
+      "day": 29
+    },
+    {
+      "date": "2027-10-01",
+      "year": 1449,
+      "month": 5,
+      "day": 1
+    },
+    {
+      "date": "2027-10-30",
+      "year": 1449,
+      "month": 5,
+      "day": 30
+    },
+    {
+      "date": "2027-10-31",
+      "year": 1449,
+      "month": 6,
+      "day": 1
+    },
+    {
+      "date": "2027-11-28",
+      "year": 1449,
+      "month": 6,
+      "day": 29
+    },
+    {
+      "date": "2027-11-29",
+      "year": 1449,
+      "month": 7,
+      "day": 1
+    },
+    {
+      "date": "2027-12-28",
+      "year": 1449,
+      "month": 7,
+      "day": 30
+    },
+    {
+      "date": "2027-12-29",
+      "year": 1449,
+      "month": 8,
+      "day": 1
+    },
+    {
+      "date": "2027-12-31",
+      "year": 1449,
+      "month": 8,
+      "day": 3
+    },
+    {
+      "date": "2028-01-01",
+      "year": 1449,
+      "month": 8,
+      "day": 4
+    },
+    {
+      "date": "2028-01-27",
+      "year": 1449,
+      "month": 8,
+      "day": 30
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+.android-tools/
+.android-signing/
+android/build/
+android/dist/
+research/
+publish/
+*.apk
+*.zip
+mosque-tv-*/
+qa/*-results.json
+qa/*-report.json
+qa/*.png
+qa/*.jpg

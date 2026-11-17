@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "calendar": "islamic-umalqura",
+  "source": "HijriDate 2.3.0 by Mohammed Alshehri, ummalqura.py MONTH_STARTS (MIT)",
+  "sourceUrl": "https://github.com/dralshehri/hijridate/blob/v2.3.0/src/hijridate/ummalqura.py",
+  "sourceDocumentation": "https://hijridate.readthedocs.io/en/stable/background.html",
+  "sourceSHA256": "792da6b597f5d85db7f9b71ba835a819a44cb95d9df812679d6d185403c84bb7",
+  "license": "MIT — licenses/hijridate-MIT.txt",
+  "convention": "Saudi civil Umm al-Qura calendar; date changes at midnight Asia/Riyadh, not sunset.",
+  "sourceFullRange": [
+    "1924-08-01",
+    "2077-11-16"
+  ],
+  "rangeStart": "2025-12-21",
+  "rangeEnd": "2028-01-27",
+  "months": [
+    {
+      "start": "2025-12-21",
+      "year": 1447,
+      "month": 7
+    },
+    {
+      "start": "2026-01-20",
+      "year": 1447,
+      "month": 8
+    },
+    {
+      "start": "2026-02-18",
+      "year": 1447,
+      "month": 9
+    },
+    {
+      "start": "2026-03-20",
+      "year": 1447,
+      "month": 10
+    },
+    {
+      "start": "2026-04-18",
+      "year": 1447,
+      "month": 11
+    },
+    {
+      "start": "2026-05-18",
+      "year": 1447,
+      "month": 12
+    },
+    {
+      "start": "2026-06-16",
+      "year": 1448,
+      "month": 1
+    },
+    {
+      "start": "2026-07-15",
+      "year": 1448,
+      "month": 2
+    },
+    {
+      "start": "2026-08-14",
+      "year": 1448,
+      "month": 3
+    },
+    {
+      "start": "2026-09-12",
+      "year": 1448,
+      "month": 4
+    },
+    {
+      "start": "2026-10-12",
+      "year": 1448,
+      "month": 5
+    },
+    {
+      "start": "2026-11-11",
+      "year": 1448,
+      "month": 6
+    },
+    {
+      "start": "2026-12-10",
+      "year": 1448,
+      "month": 7
+    },
+    {
+      "start": "2027-01-09",
+      "year": 1448,
+      "month": 8
+    },
+    {
+      "start": "2027-02-08",
+      "year": 1448,
+      "month": 9
+    },
+    {
+      "start": "2027-03-09",
+      "year": 1448,
+      "month": 10
+    },
+    {
+      "start": "2027-04-08",
+      "year": 1448,
+      "month": 11
+    },
+    {
+      "start": "2027-05-07",
+      "year": 1448,
+      "month": 12
+    },
+    {
+      "start": "2027-06-06",
+      "year": 1449,
+      "month": 1
+    },
+    {
+      "start": "2027-07-05",
+      "year": 1449,
+      "month": 2
+    },
+    {
+      "start": "2027-08-03",
+      "year": 1449,
+      "month": 3
+    },
+    {
+      "start": "2027-09-02",
+      "year": 1449,
+      "month": 4
+    },
+    {
+      "start": "2027-10-01",
+      "year": 1449,
+      "month": 5
+    },
+    {
+      "start": "2027-10-31",
+      "year": 1449,
+      "month": 6
+    },
+    {
+      "start": "2027-11-29",
+      "year": 1449,
+      "month": 7
+    },
+    {
+      "start": "2027-12-29",
+      "year": 1449,
+      "month": 8
+    },
+    {
+      "start": "2028-01-28",
+      "year": 1449,
+      "month": 9
+    }
+  ]
+}
