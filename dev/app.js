@@ -339,7 +339,7 @@
   }
   function tick(){
     const ms=nowProvider(), key=dateKey(ms), clock=formatClock(ms,currentSettings.digitStyle);
-    $('clockTime').textContent=clock.time;$('clockPeriod').textContent=clock.period;
+    if($('clockTime').textContent!==clock.time)$('clockTime').textContent=clock.time;if($('clockPeriod').textContent!==clock.period)$('clockPeriod').textContent=clock.period;
     state=resolveState(ms,events,database,suppressedId);
     if(key!==lastDate){lastDate=key;renderDates(ms);renderPrayerTable(ms);}
     const signature=key+'/'+state.phase+'/'+state.highlight+'/'+(state.next?.date||'')+'/'+currentSettings.digitStyle;
@@ -353,12 +353,12 @@
       $('nextDateLabel').textContent=state.next&&state.next.date!==key?tr('موعد اليوم التالي','Next day'):'';
     }
     const remaining=state.targetAt?Math.max(0,Math.ceil((state.targetAt-ms)/1000)):null;
-    $('countdownValue').textContent=remaining===null?'— — : — — : — —':digits(pad(Math.floor(remaining/3600))+':'+pad(Math.floor(remaining/60)%60)+':'+pad(remaining%60),currentSettings.digitStyle);
+    const countdownText=remaining===null?'— — : — — : — —':digits(pad(Math.floor(remaining/3600))+':'+pad(Math.floor(remaining/60)%60)+':'+pad(remaining%60),currentSettings.digitStyle);if($('countdownValue').textContent!==countdownText)$('countdownValue').textContent=countdownText;
     const inPrayer=state.phase==='PRAYER_MODE';
     if(inPrayer&&lastPhase!=='PRAYER_MODE'){if(settingsOpen){closeSettings(true);return;}$('prayerOverlay').hidden=false;$('prayerOverlay').setAttribute('aria-hidden','false');document.body.classList.add('praying');}
     if(!inPrayer&&lastPhase==='PRAYER_MODE'){$('prayerOverlay').hidden=true;$('prayerOverlay').setAttribute('aria-hidden','true');document.body.classList.remove('praying');}
     lastPhase=state.phase;syncContentMode();updateSlideshow(ms,contentMode!=='slides');
-    if(!settingsOpen&&ms-lastInteraction>5000)document.body.classList.add('idle');
+    if(!settingsOpen&&ms-lastInteraction>5000&&!document.body.classList.contains('idle'))document.body.classList.add('idle');
   }
   function fitInformation(){
     const info=$('mosqueInfo');if(info.hidden)return;
@@ -401,7 +401,7 @@
     }
   };
   let lastInteraction=Date.now();
-  function interaction(){if(state?.phase==='PRAYER_MODE')return;lastInteraction=nowProvider();document.body.classList.remove('idle');}
+  function interaction(){if(state?.phase==='PRAYER_MODE')return;lastInteraction=nowProvider();if(document.body.classList.contains('idle'))document.body.classList.remove('idle');}
   function resize(){const scale=Math.min(innerWidth/1920,innerHeight/1080);$('stage').style.transform='scale('+scale+')';$('stage').style.left=((innerWidth-1920*scale)/2)+'px';$('stage').style.top=((innerHeight-1080*scale)/2)+'px';fitInformation();fitSlideText();fitDonationText();sizeTicker();}
   function message(text,error){$('settingsMessage').textContent=text;$('settingsMessage').className=error?'error':'success';}
   function input(label,value,type,onchange,opts){const wrap=el('label','field'),caption=el('span',null,label),control=el('input');control.type=type||'text';if(type==='checkbox')control.checked=value;else control.value=value;Object.assign(control,opts||{});control.addEventListener('input',()=>onchange(type==='checkbox'?control.checked:type==='number'?Number(control.value):control.value));wrap.append(caption,control);return wrap;}
@@ -590,8 +590,8 @@
     window.MosqueTV={isOpen:()=>settingsOpen,handleBack:tvHandleBack,toggleSettings:()=>settingsOpen?closeSettings(true):openSettings(),openSection:id=>openSettings(id,true),refreshNative:()=>{if(settingsOpen&&!tvEditor)drawSettings();},getUIState:()=>({section:tvSectionId,pane:tvPane,editing:tvEditor?tvEditor.row.id:null,focus:document.activeElement?.id||''})};
   }
   // TV_SETTINGS_UI_END
-  function openSettings(section,fromControl){if(state?.phase==='PRAYER_MODE')return;if(settingsOpen)return;tvControlOrigin=Boolean(fromControl);if(typeof section==='string')tvSectionId=section;draft=clone(savedSettings);settingsOpen=true;tvPane=fromControl&&section!=='mosque'?'rows':'menu';$('settingsDialog').classList.remove('previewing');$('previewButton').textContent='معاينة';drawSettings();message('التغييرات مسودة؛ احفظها للاعتماد أو ارجع لإلغائها.');$('settingsDialog').showModal();if(tvMode)tvFocus(tvPane==='menu'?'tv-section-'+tvSectionId:$('tvSettingsRows')?.querySelector('button:not([disabled])')?.id||'tvSettingsBack');interaction();}
-  function closeSettings(cancel){tvEditor=null;$('tvEditor')?.remove();settingsOpen=false;draft=null;$('settingsDialog').close();$('settingsDialog').classList.remove('previewing');$('previewButton').textContent='معاينة';if(window.MosqueTVNative?.onClose)window.MosqueTVNative.onClose();if(cancel){try{useSettings(savedSettings);}catch(error){message(error.message,true);}}if(tvMode&&state?.phase!=='PRAYER_MODE'){if(tvControlOrigin&&window.MosqueControl)window.MosqueControl.open();else tvFocus('settingsButton');}tvControlOrigin=false;interaction();}
+  function openSettings(section,fromControl){if(state?.phase==='PRAYER_MODE')return;if(settingsOpen)return;tvControlOrigin=Boolean(fromControl);if(typeof section==='string')tvSectionId=section;draft=clone(savedSettings);settingsOpen=true;document.body.classList.add('settings-open');tvPane=fromControl&&section!=='mosque'?'rows':'menu';$('settingsDialog').classList.remove('previewing');$('previewButton').textContent='معاينة';drawSettings();message('التغييرات مسودة؛ احفظها للاعتماد أو ارجع لإلغائها.');$('settingsDialog').showModal();if(tvMode)tvFocus(tvPane==='menu'?'tv-section-'+tvSectionId:$('tvSettingsRows')?.querySelector('button:not([disabled])')?.id||'tvSettingsBack');interaction();}
+  function closeSettings(cancel){tvEditor=null;$('tvEditor')?.remove();settingsOpen=false;document.body.classList.remove('settings-open');draft=null;$('settingsDialog').close();$('settingsDialog').classList.remove('previewing');$('previewButton').textContent='معاينة';if(window.MosqueTVNative?.onClose)window.MosqueTVNative.onClose();if(cancel){try{useSettings(savedSettings);}catch(error){message(error.message,true);}}if(tvMode&&state?.phase!=='PRAYER_MODE'){if(tvControlOrigin&&window.MosqueControl)window.MosqueControl.open();else tvFocus('settingsButton');}tvControlOrigin=false;interaction();}
   function launchControls(){if(window.MosqueSetup?.isOpen())return;if(setupPending&&window.MosqueSetup){window.MosqueSetup.open({required:true});return;}if(tvMode&&window.MosqueControl){if(settingsOpen){closeSettings(true);return;}if(window.MosqueControl.isOpen())window.MosqueControl.close();else window.MosqueControl.open();}else openSettings();}
   function download(name,value){const blob=new Blob([JSON.stringify(value,null,2)],{type:'application/json;charset=utf-8'}),url=URL.createObjectURL(blob),a=el('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
   function exportTimetable(){if(database)download('mosque-prayer-timetable.json',{metadata:database.metadata,records:database.records});}

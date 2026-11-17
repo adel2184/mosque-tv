@@ -171,6 +171,48 @@ test('Status summaries render literal bounded text and refresh availability with
   eq(app.get('cc-row-sound').disabled,true);const summary=app.get('cc-row-network').querySelector('.cc-row-summary');eq(summary.children.length,0);eq(summary.textContent.length,140);assert(summary.textContent.includes('<img'));
   app.window.MosqueTVNative.controlStatus=()=>({available:{sound:true},rows:{network:'متصل'}});app.center.refreshNative();app.flush();eq(app.get('cc-row-sound').disabled,false);eq(app.get('cc-row-network').querySelector('.cc-row-summary').textContent,'متصل');eq(app.calls.length,0);
 });
+test('Unchanged native notifications preserve existing controls and focus, while changed summaries and availability refresh',()=>{
+  const app=runtime();let reads=0,status={device:'fixture',rows:{network:'Wi-Fi',sound:'Ready'},available:{sound:true},message:'Local'};
+  app.window.MosqueTVNative.controlStatus=()=>{reads++;return status;};app.open();eq(reads,1);
+  const network=app.get('cc-row-network'),sound=app.get('cc-row-sound');network.focus();let refocus=0;
+  const focus=network.focus;network.focus=function(...args){refocus++;return focus.apply(this,args);};
+  // Reordered keys and extra native-only metadata do not alter anything displayed.
+  status={message:'Local',available:{sound:true},rows:{sound:'Ready',network:'Wi-Fi'},device:'fixture',diagnosticCounter:20};
+  app.event('mosque-native-power-result',{});app.event('mosque-native-update-result',{});app.center.refreshNative();app.flush();
+  eq(reads,4);assert(app.get('cc-row-network')===network,'Unchanged status detached the network row');assert(app.get('cc-row-sound')===sound,'Unchanged status detached the sound row');assert(app.document.activeElement===network,'Unchanged status moved focus');eq(refocus,0);
+  status={...status,rows:{network:'Ethernet',sound:'Ready'},available:{sound:false}};app.center.refreshNative();app.flush();
+  eq(reads,5);assert(app.get('cc-row-network')!==network);eq(app.get('cc-row-network').querySelector('.cc-row-summary').textContent,'Ethernet');eq(app.get('cc-row-sound').disabled,true);eq(app.document.activeElement.id,'cc-row-network');eq(operatorCalls(app).length,0);
+});
+
+test('Status notifications retain the customization draft and do not detach its focused option unless visible status changes',()=>{
+  const app=runtime();let status={device:'fixture',available:{screensaver:true},rows:{network:'Wi-Fi'}};
+  app.window.MosqueTVNative.controlStatus=()=>status;app.open();app.click('cc-customize');app.click('cc-option-network');
+  const draft=app.center.getState().draftRows,option=app.get('cc-option-network');option.focus();
+  app.event('mosque-native-power-result',{});app.center.refreshNative();app.flush();
+  assert(app.get('cc-option-network')===option,'Unchanged status detached the draft option');assert(app.document.activeElement===option,'Unchanged status moved customization focus');same(app.center.getState().draftRows,draft);eq(app.values.has(CENTER),false);
+  status={...status,available:{screensaver:false},rows:{network:'Offline'}};app.center.refreshNative();app.flush();
+  assert(app.get('cc-option-network')!==option);eq(app.document.activeElement.id,'cc-option-network');same(app.center.getState().draftRows,draft);eq(app.get('cc-option-screensaver'),null);eq(app.values.has(CENTER),false);eq(operatorCalls(app).length,0);
+});
+
+test('A locale change refreshes labels even when the native status is unchanged and preserves the current focus',()=>{
+  const app=runtime();let english=false;
+  app.window.MosqueLocale={t:text=>english&&text==='الشبكة'?'Network':text,translateUI(){}};
+  app.window.MosqueTVNative.controlStatus=()=>({device:'fixture',rows:{network:'Wi-Fi'}});app.open();
+  const network=app.get('cc-row-network');network.focus();eq(network.querySelector('.cc-row-title').textContent,'الشبكة');
+  english=true;app.event('mosque-locale-change',{});app.flush();
+  assert(app.get('cc-row-network')!==network);eq(app.get('cc-row-network').querySelector('.cc-row-title').textContent,'Network');eq(app.document.activeElement.id,'cc-row-network');eq(operatorCalls(app).length,0);
+});
+
+test('Center visibility uses a guarded body class and boundary arrows do not refocus the same control',()=>{
+  const app=runtime();let openedClassWrites=0;const add=app.document.body.classList.add;
+  app.document.body.classList.add=(...values)=>{if(values.includes('controls-open'))openedClassWrites++;return add(...values);};
+  app.open();assert(app.document.body.classList.contains('controls-open'));app.open();eq(openedClassWrites,1);
+  const first=app.get('cc-quick-bluetooth');first.focus();let refocus=0,scroll=0;const focus=first.focus;
+  first.focus=function(...args){refocus++;return focus.apply(this,args);};first.scrollIntoView=()=>scroll++;
+  app.key('ArrowRight');assert(app.document.activeElement===first,'Boundary key moved focus');eq(refocus,0);eq(scroll,0);
+  app.prayer(true);eq(app.document.body.classList.contains('controls-open'),false);eq(app.center.isOpen(),false);
+});
+
 test('Every old settings category remains reachable from the app shortcut with its original draft and cancellation behavior',()=>{
   const app=runtime();app.open();app.click('cc-row-app');eq(app.window.MosqueTV.isOpen(),true);eq(app.window.MosqueTV.getUIState().section,'mosque');eq(app.window.MosqueTV.getUIState().pane,'menu');
   const ids=app.window.TEST.sections().map(item=>item.id);same(ids,['mosque','iqama','display','donation','data','backup','tv-home','tv-system','tv-power','tv-update','tv-device-setup']);for(const id of ids){app.section(id);eq(app.window.MosqueTV.getUIState().section,id);assert(app.get('tvSettingsRows'));}

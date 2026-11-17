@@ -29,7 +29,7 @@
   const tx=value=>window.MosqueLocale&&typeof window.MosqueLocale.t==='function'?window.MosqueLocale.t(value):value;
   function localizePanel(){if(window.MosqueLocale&&typeof window.MosqueLocale.translateUI==='function')window.MosqueLocale.translateUI(panel);}
   const defaults=()=>({schemaVersion:1,rows:DEFAULT_ROWS.slice(),lastId:'cc-row-network'});
-  let storageNote='',config=defaults(),nativeStatus={},opened=false,view='main',customRows=null,returnFocus=null,closeTimer=0;
+  let storageNote='',config=defaults(),nativeStatus={},lastStatusSignature=null,opened=false,view='main',customRows=null,returnFocus=null,closeTimer=0;
   let overlay=null,panel=null,content=null,messageNode=null,footer=null;
   function validate(value){
     if(!value||typeof value!=='object'||Array.isArray(value)||value.schemaVersion!==1||!Array.isArray(value.rows)||value.rows.length<1||value.rows.length>6||value.rows.some(id=>typeof id!=='string'||!ROW_IDS.has(id))||new Set(value.rows).size!==value.rows.length||typeof value.lastId!=='string'||!FOCUS_IDS.has(value.lastId))return null;
@@ -54,6 +54,11 @@
     if(value&&typeof value==='object'){const text=value.message||value.summary||value.name;if(typeof text==='string')return(value.name&&!value.message&&!value.summary?text:tx(text)).slice(0,140);}
     return tx(available(row.id)?row.fallback||'': 'غير متاح في هذا التلفاز');
   }
+  // Compare only values rendered by this panel, independent of native object key order.
+  function statusSignature(){
+    const device=typeof nativeStatus.device==='string'?nativeStatus.device:nativeStatus.device&&typeof nativeStatus.device.model==='string'?nativeStatus.device.model:'شاشة الجامع';
+    return JSON.stringify([device,QUICK.map(row=>available(row.id)),CATALOG.map(row=>[available(row.id),summary(row)]),Boolean(nativeStatus.screensaverAvailable===true||nativeStatus.available&&nativeStatus.available.screensaver===true),tx(storageNote||nativeStatus.message||'')]);
+  }
   const PATHS={
     bluetooth:'M10 3l8 7-6 4 6 4-8 7V3M5 8l12 12M5 20L17 8',
     mirror:'M4 7h20v14H12M4 16a8 8 0 018 8M4 21a3 3 0 013 3M4 25h.1',
@@ -75,7 +80,7 @@
   function button(id,className,label,action){const node=element('button',className);node.id=id;node.type='button';node.setAttribute('aria-label',tx(label));node.addEventListener('click',()=>{if(opened&&!prayerActive())action();});return node;}
   function get(id){return document.getElementById(id);}
   const launcher=get('settingsButton');if(window.MosqueAndroid&&launcher){launcher.classList.add('cc-launcher');launcher.setAttribute('aria-label','مركز التحكم');launcher.setAttribute('title','مركز التحكم — MENU');}
-  function focus(id){const node=get(id);if(!node||node.disabled)return false;try{node.focus({preventScroll:true});}catch(_){node.focus();}if(node.scrollIntoView)node.scrollIntoView({block:'nearest',inline:'nearest'});return true;}
+  function focus(id){const node=get(id);if(!node||node.disabled)return false;if(node===document.activeElement)return true;try{node.focus({preventScroll:true});}catch(_){node.focus();}if(node.scrollIntoView)node.scrollIntoView({block:'nearest',inline:'nearest'});return true;}
   function allMain(){return QUICK.map(row=>get('cc-quick-'+row.id)).concat(config.rows.map(id=>get('cc-row-'+id)),[get('cc-customize')]).filter(node=>node&&!node.disabled);}
   function activeMainId(){const id=document.activeElement&&document.activeElement.id;return id&&FOCUS_IDS.has(id)?id:null;}
   function remember(){const id=activeMainId();if(id)config.lastId=id;persist();}
@@ -86,6 +91,7 @@
     if(view==='custom'&&settings.commit!==false&&customRows){config.rows=customRows.slice();persist();}
     else if(view==='main'&&settings.remember!==false)remember();
     opened=false;view='main';customRows=null;
+    if(document.body.classList.contains('controls-open'))document.body.classList.remove('controls-open');
     overlay.classList.remove('is-open');overlay.setAttribute('aria-hidden','true');
     try{if(window.MosqueTVNative&&typeof window.MosqueTVNative.onControlClose==='function')window.MosqueTVNative.onControlClose();}catch(_){}
     if(closeTimer)clearTimeout(closeTimer);
@@ -130,7 +136,7 @@
     if(prayerActive())return false;
     build();if(closeTimer)clearTimeout(closeTimer);
     if(!opened)returnFocus=document.activeElement;
-    opened=true;nativeStatus=readNative();main();overlay.hidden=false;overlay.setAttribute('aria-hidden','false');
+    opened=true;if(!document.body.classList.contains('controls-open'))document.body.classList.add('controls-open');nativeStatus=readNative();lastStatusSignature=statusSignature();main();overlay.hidden=false;overlay.setAttribute('aria-hidden','false');
     const reveal=()=>{if(opened)overlay.classList.add('is-open');};if(typeof requestAnimationFrame==='function')requestAnimationFrame(reveal);else reveal();
     if(!focus(config.lastId)){const first=allMain()[0];if(first)focus(first.id);}return true;
   }
@@ -176,11 +182,11 @@
     }
     const first=allMain()[0];if(first)focus(first.id);return true;
   }
-  function refreshNative(){if(!opened)return;const id=document.activeElement&&document.activeElement.id;nativeStatus=readNative();if(view==='custom')customizeRender(id);else{main();if(!focus(id)){const first=allMain()[0];if(first)focus(first.id);}}}
+  function refreshNative(force){if(!opened)return;nativeStatus=readNative();const signature=statusSignature();if(force!==true&&signature===lastStatusSignature)return;lastStatusSignature=signature;const id=document.activeElement&&document.activeElement.id;if(view==='custom')customizeRender(id);else{main();if(!focus(id)){const first=allMain()[0];if(first)focus(first.id);}}}
   document.addEventListener('keydown',handleKey,true);
   if(document.body&&typeof MutationObserver==='function')new MutationObserver(()=>{if(opened&&prayerActive())close({immediate:true,restoreFocus:false,commit:false,remember:false});}).observe(document.body,{attributes:true,attributeFilter:['class']});
   window.addEventListener('mosque-native-update-result',refreshNative);window.addEventListener('mosque-native-power-result',refreshNative);window.addEventListener('focus',refreshNative);
   window.addEventListener('mosque-native-notice',event=>{if(opened&&!prayerActive()&&event.detail&&typeof event.detail.message==='string')statusMessage(event.detail.message);});
-  window.addEventListener('mosque-locale-change',()=>{if(launcher){launcher.setAttribute('aria-label',tx('مركز التحكم'));launcher.setAttribute('title',tx('مركز التحكم — MENU'));}refreshNative();});
+  window.addEventListener('mosque-locale-change',()=>{if(launcher){launcher.setAttribute('aria-label',tx('مركز التحكم'));launcher.setAttribute('title',tx('مركز التحكم — MENU'));}refreshNative(true);});
   window.MosqueControl={open,close,isOpen:()=>opened,handleBack,handleKey,refreshNative,getState:()=>({view,config:clone(config),draftRows:customRows&&customRows.slice(),focusedId:document.activeElement&&document.activeElement.id||'',storageKey:STORAGE_KEY})};
 })();

@@ -38,8 +38,13 @@
     var detail = event.detail || {};
     message(detail.message || (detail.success ? 'حُفظ الملف في المكان المختار.' : detail.cancelled ? 'أُلغي حفظ الملف.' : 'تعذر حفظ الملف.'), !detail.success && !detail.cancelled);
   });
+  var reportedPrayer;
   function reportPrayer() {
-    try { native.prayerState(document.body.classList.contains('praying')); } catch (_) {}
+    var active = document.body.classList.contains('praying');
+    if (active === reportedPrayer) return;
+    // Body classes also change for focus/idle UI. Only notify a real prayer
+    // transition, and retain a failed delivery for the next observer retry.
+    try { native.prayerState(active); reportedPrayer = active; } catch (_) {}
   }
   new MutationObserver(reportPrayer).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   reportPrayer();
@@ -190,7 +195,6 @@
   window.addEventListener('mosque-native-update-result',refreshNativePanel);
   window.addEventListener('mosque-native-power-result',refreshNativePanel);
   window.addEventListener('mosque-native-control-result',function(){if(window.MosqueControl)window.MosqueControl.refreshNative();});
-  window.addEventListener('focus',function(){if(window.MosqueControl)window.MosqueControl.refreshNative();});
   var dialog = document.getElementById('settingsDialog');
   if (dialog) new MutationObserver(function () {
     if (dialog.open) ensureStartupPanel();

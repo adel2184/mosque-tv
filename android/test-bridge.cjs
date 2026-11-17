@@ -11,7 +11,7 @@ function test(name,fn){try{fn();checks.push({name,pass:true});}catch(error){chec
 
 function runtime(options={}){
   const ids=new Map(),docListeners=new Map(),windowListeners=new Map(),observers=[],readers=[],exports=[],prayers=[],revoked=[],nativeCalls=[];
-  let serial=0,document,flushingMutations=false,homeJSON=options.homeStatusJSON===undefined?JSON.stringify(options.homeStatus||{isDefaultHome:false,canRequestHomeRole:true,canOpenHomeSettings:true}):options.homeStatusJSON;
+  let serial=0,document,flushingMutations=false,prayerFailures=options.prayerFailures||0,homeJSON=options.homeStatusJSON===undefined?JSON.stringify(options.homeStatus||{isDefaultHome:false,canRequestHomeRole:true,canOpenHomeSettings:true}):options.homeStatusJSON;
   let powerJSON=JSON.stringify(options.powerStatus||{mode:'always',start:'04:00',end:'23:00',active:true,sleepMinutes:15});
   const pendingMutations=[];
   function fire(listeners,name,event){event.type=name;event.preventDefault=event.preventDefault||function(){this.defaultPrevented=true;};for(const listener of listeners.get(name)||[])listener(event);return event;}
@@ -55,7 +55,7 @@ function runtime(options={}){
   class Blob{constructor(parts){this.text=parts.map(String).join('');this.size=Buffer.byteLength(this.text,'utf8');}}
   const URL={createObjectURL:()=> 'blob:simulated/'+(++serial),revokeObjectURL:url=>revoked.push(url)};
   const originalCreate=URL.createObjectURL;
-  const native={exportJson(name,json){if(options.throwNative)throw Error('Simulated native picker failure');exports.push({name,json});},prayerState(active){prayers.push(active);},homeStatus(){nativeCalls.push({method:'homeStatus'});if(options.throwHomeStatus)throw Error('Simulated HOME status failure');return homeJSON;},requestHomeRole(){nativeCalls.push({method:'requestHomeRole'});return true;},openHomeSettings(){nativeCalls.push({method:'openHomeSettings'});return true;},openSystemSettings(){nativeCalls.push({method:'openSystemSettings'});return true;}};
+  const native={exportJson(name,json){if(options.throwNative)throw Error('Simulated native picker failure');exports.push({name,json});},prayerState(active){if(prayerFailures>0){prayerFailures--;throw Error('Simulated prayer notification failure');}prayers.push(active);},homeStatus(){nativeCalls.push({method:'homeStatus'});if(options.throwHomeStatus)throw Error('Simulated HOME status failure');return homeJSON;},requestHomeRole(){nativeCalls.push({method:'requestHomeRole'});return true;},openHomeSettings(){nativeCalls.push({method:'openHomeSettings'});return true;},openSystemSettings(){nativeCalls.push({method:'openSystemSettings'});return true;}};
   native.powerStatus=()=>powerJSON;
   native.savePower=value=>nativeCalls.push({method:'savePower',value:JSON.parse(value)});
   const sandbox={Element,MutationObserver,FileReader,Blob,URL,document,Map,Array,console,getComputedStyle:node=>({visibility:node.style.visibility||'visible',display:node.hidden?'none':'block'}),addEventListener(name,listener){if(!windowListeners.has(name))windowListeners.set(name,[]);windowListeners.get(name).push(listener);}};
@@ -69,6 +69,7 @@ function runtime(options={}){
     result(detail){fire(windowListeners,'mosque-native-export-result',{detail});flushMutations();},
     homeResult(detail={}){fire(windowListeners,'mosque-native-home-result',{detail});flushMutations();},
     powerResult(detail={}){fire(windowListeners,'mosque-native-power-result',{detail});flushMutations();},
+    controlResult(detail={}){fire(windowListeners,'mosque-native-control-result',{detail});flushMutations();},
     focusWindow(){fire(windowListeners,'focus',{});flushMutations();},
     setHomeStatus(value){homeJSON=typeof value==='string'?value:JSON.stringify(value);},
     setPowerStatus(value){powerJSON=JSON.stringify(value);},
@@ -85,7 +86,36 @@ test('Blob/FileReader export sends original Arabic JSON and filename to the nati
 test('Revoked blob URLs are no longer intercepted or exported',()=>{const app=runtime(),file=app.download();app.URL.revokeObjectURL(file.url);eq(app.revoked[0],file.url);assert(!app.click(file.anchor).defaultPrevented);eq(app.readers.length,0);eq(app.exports.length,0);});
 test('Oversized blobs, FileReader failures, and native picker errors fail without exporting',()=>{const app=runtime(),file=app.download();file.blob.size=3*1024*1024+1;assert(app.click(file.anchor).defaultPrevented);eq(app.readers.length,0);eq(app.message.className,'error');const next=app.download();app.click(next.anchor);app.flushRead(true);eq(app.exports.length,0);assert(app.message.textContent.includes('تعذرت قراءة'));const throwing=runtime({throwNative:true}),third=throwing.download();throwing.click(third.anchor);throwing.flushRead();eq(throwing.exports.length,0);assert(throwing.message.textContent.includes('تعذر فتح'));});
 test('Native success, cancellation, and failure events show distinct safe Arabic messages',()=>{const app=runtime();app.result({success:true,message:'حُفظ الملف للاختبار'});eq(app.message.textContent,'حُفظ الملف للاختبار');eq(app.message.className,'success');app.result({success:false,cancelled:true});eq(app.message.textContent,'أُلغي حفظ الملف.');eq(app.message.className,'success');app.result({success:false,cancelled:false,message:'تعذر الحفظ'});eq(app.message.textContent,'تعذر الحفظ');eq(app.message.className,'error');});
-test('Prayer observer reports the initial state and subsequent body prayer changes',()=>{const app=runtime();eq(app.prayers[0],false);app.document.body.classList.add('praying');app.flushMutations();eq(app.prayers.at(-1),true);app.document.body.classList.remove('praying');app.flushMutations();eq(app.prayers.at(-1),false);});
+test('Prayer observer delivers the initial state and real transitions without idle/focus-class notification noise',()=>{
+  const app=runtime();eq(JSON.stringify(app.prayers),'[false]');
+  for(let i=0;i<20;i++){app.document.body.classList.add('idle');app.flushMutations();app.document.body.classList.remove('idle');app.flushMutations();}
+  eq(JSON.stringify(app.prayers),'[false]');
+  app.document.body.classList.add('praying');app.flushMutations();
+  for(let i=0;i<20;i++){app.document.body.classList.add('idle');app.document.body.classList.add('praying');app.flushMutations();}
+  eq(JSON.stringify(app.prayers),'[false,true]');
+  app.document.body.classList.remove('praying');app.flushMutations();
+  app.document.body.classList.remove('idle');app.flushMutations();eq(JSON.stringify(app.prayers),'[false,true,false]');
+});
+
+test('A thrown prayer notification is retried and only successful state deliveries are deduplicated',()=>{
+  const app=runtime({prayerFailures:1});eq(app.prayers.length,0);
+  app.document.body.classList.add('idle');app.flushMutations();eq(JSON.stringify(app.prayers),'[false]');
+  const deliver=app.sandbox.MosqueAndroid.prayerState;let failNext=true,attempts=0;
+  app.sandbox.MosqueAndroid.prayerState=active=>{attempts++;if(failNext){failNext=false;throw Error('Simulated transition failure');}deliver(active);};
+  app.document.body.classList.add('praying');app.flushMutations();eq(attempts,1);eq(JSON.stringify(app.prayers),'[false]');
+  app.document.body.classList.remove('idle');app.flushMutations();eq(attempts,2);eq(JSON.stringify(app.prayers),'[false,true]');
+  app.document.body.classList.add('idle');app.flushMutations();eq(attempts,2);
+  app.document.body.classList.remove('praying');app.flushMutations();eq(attempts,3);eq(JSON.stringify(app.prayers),'[false,true,false]');
+});
+
+test('Window focus keeps the settings refresh and does not duplicate the control center owner refresh',()=>{
+  const app=runtime();let centerRefreshes=0,settingsRefreshes=0;
+  app.sandbox.MosqueControl={refreshNative:()=>centerRefreshes++};
+  app.sandbox.MosqueTV={isOpen:()=>true,refreshNative:()=>settingsRefreshes++};
+  app.sandbox.addEventListener('focus',()=>app.sandbox.MosqueControl.refreshNative());
+  app.focusWindow();eq(centerRefreshes,1);eq(settingsRefreshes,1);
+  app.controlResult();eq(centerRefreshes,2);eq(settingsRefreshes,1);
+});
 test('Spatial arrow navigation moves focus while Ctrl/Alt shortcuts and prayer state pass through',()=>{const app=runtime(),a=app.control('button','a',100,100),b=app.control('button','b',220,100);a.focus();assert(app.key('ArrowRight').defaultPrevented);eq(app.document.activeElement,b);a.focus();assert(!app.key('ArrowRight',{ctrlKey:true}).defaultPrevented);eq(app.document.activeElement,a);assert(!app.key('ArrowRight',{altKey:true}).defaultPrevented);app.document.body.classList.add('praying');assert(!app.key('ArrowRight').defaultPrevented);eq(app.document.activeElement,a);});
 test('Text editing and select arrows remain native; dialog focus excludes hidden and disabled controls',()=>{const app=runtime(),outside=app.control('button','outside',100,100),hidden=app.control('button','hidden',100,100,app.settingsBody),disabled=app.control('button','disabled',100,100,app.settingsBody),text=app.control('input','text',100,180,app.settingsBody),select=app.control('select','select',100,260,app.settingsBody);hidden.hidden=true;disabled.disabled=true;text.type='text';outside.focus();app.openSettings();eq(app.document.activeElement,text);assert(!app.key('ArrowLeft').defaultPrevented);eq(app.document.activeElement,text);select.focus();assert(!app.key('ArrowDown').defaultPrevented);eq(app.document.activeElement,select);assert(select.classList.contains('tv-focus'));assert(!text.classList.contains('tv-focus'));});
 
