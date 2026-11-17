@@ -91,6 +91,7 @@
         : state.canRequestHomeRole || state.canOpenHomeSettings
           ? 'لم يُختر التطبيق واجهةً للبدء بعد. اختره في نافذة النظام، وحدد «دائمًا» إن ظهر الخيار.'
           : 'لا يعرض هذا النظام خيار تغيير واجهة البدء عبر التطبيق. راجع إعدادات التلفاز؛ التشغيل التلقائي غير مؤكّد.';
+      text = homeMessage(state, text);
     } catch (_) {
       request.disabled = true;
       text = 'تعذر قراءة إعداد واجهة البدء. افتح إعدادات التلفاز للتحقق.';
@@ -127,6 +128,9 @@
   window.addEventListener('mosque-native-home-result', refreshHomeStatus);
   // Small native-only adapters. Mosque data still uses the app's versioned JSON draft.
   var powerDraft = null;
+  function homeMessage(state, fallback) {
+    return typeof state.message === 'string' && state.message.trim() ? state.message.slice(0, 500) : fallback;
+  }
   function readState(method, fallback) {
     try { if (typeof native[method] !== 'function') return fallback; var state = JSON.parse(String(native[method]())); return state && typeof state === 'object' && !Array.isArray(state) ? state : fallback; }
     catch (_) { return fallback; }
@@ -143,6 +147,7 @@
       var home = readState('homeStatus', {}), power = readState('powerStatus', {}), update = readState('updateStatus', {}), device = readState('deviceStatus', {});
       var validHome = typeof home.isDefaultHome === 'boolean' && typeof home.canRequestHomeRole === 'boolean' && typeof home.canOpenHomeSettings === 'boolean';
       var homeText = !validHome ? 'تعذر قراءة إعداد واجهة البدء.' : home.isDefaultHome ? 'التطبيق هو واجهة البدء الافتراضية.' : 'التطبيق ليس واجهة البدء الافتراضية.';
+      if (validHome) homeText = homeMessage(home, homeText);
       if (!powerDraft) powerDraft = { mode: ['always','scheduled','system'].includes(power.mode) ? power.mode : 'always', start: typeof power.start === 'string' ? power.start : '04:00', end: typeof power.end === 'string' ? power.end : '23:00' };
       var request = nativeAction('tv-request-home', 'اختيار التطبيق كواجهة البدء', 'requestHomeRole');
       request.disabled = !validHome || home.isDefaultHome || (!home.canRequestHomeRole && !home.canOpenHomeSettings);

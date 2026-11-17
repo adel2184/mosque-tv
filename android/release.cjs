@@ -23,7 +23,7 @@ function generate(base=root){
   fs.writeFileSync(path.join(dist,'update.json'),JSON.stringify(feed,null,2)+'\n');
   const checks=[name,'update.json'].map(file=>crypto.createHash('sha256').update(fs.readFileSync(path.join(dist,file))).digest('hex')+'  '+file).join('\n')+'\n';
   fs.writeFileSync(path.join(dist,'SHA256SUMS.txt'),checks);
-  const changes=versionName==='2.0.2'?'\n\nتصحيحات الريموت: تحرير الوقت بمحرر ساعات ودقائق دون كتابة النقطتين، وإبقاء القسم المحدد ظاهرًا أثناء التنقل في القائمة الطويلة.':'';
+  const changes=versionName==='2.0.3'?'\n\nتصحيحات الريموت: تحرير الوقت بمحرر ساعات ودقائق دون كتابة النقطتين، وإبقاء القسم المحدد ظاهرًا أثناء التنقل في القائمة الطويلة. تصحيح حالة HOME حسب واجهة البدء الفعلية؛ منح الدور وحده لا يضمن البدء مع التلفاز. لم تُعطّل واجهة المصنع. بقي 2.0.2 مسودة غير منشورة.':'';
   fs.writeFileSync(path.join(dist,'RELEASE_NOTES_AR.txt'),'الإصدار '+versionName+' — الرمز '+versionCode+changes+'\n\nتثبيت تحديث للتطبيق الحالي من دون إلغاء تثبيته. احتفظ بنسخة مصدّرة من الإعدادات. التشغيل اليومي والمواقيت والمحتوى المحلي تعمل دون إنترنت؛ البحث عن تحديث وتنزيله يحتاجان اتصالًا مؤقتًا. يتطلب التثبيت موافقة المستخدم في شاشة Android.\n\nاختبارات البناء الآلي ليست اختبارًا على تلفاز فعلي. راجع دليل التثبيت والتقرير المرفقين لنتائج التحقق وحدودها.\n');
   console.log(JSON.stringify({tag,versionName,versionCode,minSdk,bytes:bytes.length,sha256:sha,certificateSHA256:ORIGINAL_CERT},null,2));
   return feed;

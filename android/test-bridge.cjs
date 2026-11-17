@@ -122,5 +122,32 @@ test('HOME buttons invoke only their matching native action and ignore clicks du
   for(const [id]of routes)app.click(app.document.getElementById(id));eq(homeActions(app).length,3);
   app.document.body.classList.remove('praying');app.flushMutations();app.click(app.document.getElementById('tv-system-settings'));eq(homeActions(app).length,4);eq(homeActions(app).at(-1),'openSystemSettings');
 });
+test('A held HOME role with a different effective resolver shows the native explanation and keeps the settings fallback actionable',()=>{
+  const explanation='تم اختيار تطبيق الجامع، لكن التلفزيون ما زال يفتح واجهة أخرى عند الضغط على Home. راجع إعدادات واجهة البدء في التلفزيون.';
+  const app=runtime({homeStatus:{isDefaultHome:false,roleHeld:true,effectiveHomePackage:'com.google.android.tvlauncher',canRequestHomeRole:false,canOpenHomeSettings:true,message:explanation}});
+  app.openSettings();const status=app.document.getElementById('tv-home-status'),request=app.document.getElementById('tv-request-home');
+  eq(status.textContent,explanation);eq(request.disabled,false);eq(homeActions(app).length,0);
+  app.click(request);eq(homeActions(app).at(-1),'requestHomeRole');
+  app.setHomeStatus({isDefaultHome:true,roleHeld:true,effectiveHomePackage:'sa.mosque.display',canRequestHomeRole:false,canOpenHomeSettings:true,message:'النظام يختار شاشة الجامع.'});app.homeResult();
+  eq(status.textContent,'النظام يختار شاشة الجامع.');eq(request.disabled,true);
+});
+test('The native TV hub uses the same effective HOME state and literal explanation without automatically changing the launcher',()=>{
+  const explanation='النظام يختار واجهة أخرى <img src=x onerror=alert(1)>.';
+  const app=runtime({homeStatus:{isDefaultHome:false,roleHeld:true,effectiveHomePackage:'com.google.android.tvlauncher',canRequestHomeRole:false,canOpenHomeSettings:true,message:explanation}});
+  let home=app.sandbox.MosqueTVNative.getSections().find(section=>section.id==='tv-home');
+  eq(home.rows.find(row=>row.id==='tv-home-status').value,explanation);eq(home.rows.find(row=>row.id==='tv-request-home').disabled,false);eq(homeActions(app).length,0);
+  home.rows.find(row=>row.id==='tv-request-home').action();eq(homeActions(app).at(-1),'requestHomeRole');
+  app.setHomeStatus({isDefaultHome:false,roleHeld:true,effectiveHomePackage:'',canRequestHomeRole:false,canOpenHomeSettings:false,message:'تعذر تحديد واجهة البدء الفعلية.'});
+  home=app.sandbox.MosqueTVNative.getSections().find(section=>section.id==='tv-home');eq(home.rows.find(row=>row.id==='tv-request-home').disabled,true);eq(home.rows.find(row=>row.id==='tv-home-status').value,'تعذر تحديد واجهة البدء الفعلية.');
+});
+test('Optional HOME explanations are bounded literal text and never bypass mandatory status validation',()=>{
+  const long='<img src=x onerror=alert(1)> '+ 'س'.repeat(600);
+  const app=runtime({homeStatus:{isDefaultHome:false,canRequestHomeRole:false,canOpenHomeSettings:true,message:long}});app.openSettings();
+  const status=app.document.getElementById('tv-home-status');eq(status.textContent,long.slice(0,500));eq(status.children.length,0);eq(status.textContent.length,500);
+  eq(app.sandbox.MosqueTVNative.getSections().find(section=>section.id==='tv-home').rows[0].value,long.slice(0,500));
+  app.setHomeStatus({isDefaultHome:'true',canRequestHomeRole:false,canOpenHomeSettings:true,message:long});app.homeResult();assert(status.textContent.includes('تعذر قراءة'));eq(app.document.getElementById('tv-request-home').disabled,true);
+  eq(app.sandbox.MosqueTVNative.getSections().find(section=>section.id==='tv-home').rows[0].value,'تعذر قراءة إعداد واجهة البدء.');
+  app.setHomeStatus({isDefaultHome:false,canRequestHomeRole:true,canOpenHomeSettings:true,message:{unsafe:true}});app.focusWindow();assert(status.textContent.includes('لم يُختر'));
+});
 const report={executedAt:new Date().toISOString(),sourceSHA256:crypto.createHash('sha256').update(source).digest('hex'),method:'Actual android/tv-bridge.js evaluated with a minimal simulated DOM, queued MutationObserver records, Blob/FileReader, and native HOME/status interface. No Android, WebView, HOME-role chooser, TV remote, browser, or SAF provider was executed.',passed:checks.filter(check=>check.pass).length,total:checks.length,failed:checks.filter(check=>!check.pass).length,checks};
 fs.writeFileSync(path.join(__dirname,'bridge-test-results.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));if(report.failed)process.exitCode=1;

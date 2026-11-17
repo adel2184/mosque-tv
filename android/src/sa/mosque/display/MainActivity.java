@@ -391,8 +391,8 @@ public final class MainActivity extends Activity {
         if (request == CHOOSE_HOME) {
             homeRolePending = false;
             publishHomeResult();
-            publishNotice(isDefaultHome() ? "شاشة الجامع هي واجهة البدء الافتراضية الآن."
-                    : "لم تتغير واجهة البدء. يمكنك مراجعة خيارات واجهة البدء في إعدادات التلفزيون.");
+            publishNotice(homeStatusJson().optString("message",
+                    "راجع اختيار واجهة البدء في إعدادات التلفزيون."));
         } else if (request == OPEN_JSON) {
             ValueCallback<Uri[]> callback = fileCallback;
             fileCallback = null;
@@ -510,26 +510,52 @@ public final class MainActivity extends Activity {
         catch (RuntimeException ignored) { return false; }
     }
 
-    private boolean isDefaultHome() {
+    private boolean hasHomeRole() {
         try {
-            if (Build.VERSION.SDK_INT >= 29) {
-                RoleManager manager = homeRoleManager();
-                if (manager != null && manager.isRoleHeld(RoleManager.ROLE_HOME)) return true;
-            }
+            RoleManager manager = homeRoleManager();
+            return manager != null && manager.isRoleHeld(RoleManager.ROLE_HOME);
+        } catch (RuntimeException ignored) { return false; }
+    }
+
+    private String effectiveHomePackage() {
+        try {
             Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
             ResolveInfo resolved = getPackageManager().resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY);
-            return resolved != null && resolved.activityInfo != null
-                    && getPackageName().equals(resolved.activityInfo.packageName);
-        } catch (RuntimeException ignored) { return false; }
+            String name = resolved == null || resolved.activityInfo == null
+                    ? null : resolved.activityInfo.packageName;
+            return name != null && name.length() <= 240 ? name : "";
+        } catch (RuntimeException ignored) { return ""; }
+    }
+
+    private boolean isDefaultHome() {
+        // Some TV builds retain ROLE_HOME while resolving HOME to another launcher.
+        return getPackageName().equals(effectiveHomePackage());
     }
 
     private JSONObject homeStatusJson() {
         JSONObject status = new JSONObject();
         try {
-            status.put("isDefaultHome", isDefaultHome());
-            status.put("canRequestHomeRole", Build.VERSION.SDK_INT >= 29 && homeRoleManager() != null);
+            String effectivePackage = effectiveHomePackage();
+            boolean effectiveDefault = getPackageName().equals(effectivePackage);
+            boolean roleHeld = hasHomeRole();
+            status.put("isDefaultHome", effectiveDefault);
+            status.put("roleHeld", roleHeld);
+            status.put("effectiveHomePackage", effectivePackage);
+            status.put("canRequestHomeRole", !roleHeld && homeRoleManager() != null);
             status.put("canOpenHomeSettings", canResolveSettings(Settings.ACTION_HOME_SETTINGS)
-                    || canResolveSettings(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS));
+                    || canResolveSettings(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
+                    || canResolveSettings(Settings.ACTION_SETTINGS));
+            String message;
+            if (effectiveDefault) {
+                message = "النظام يختار شاشة الجامع لواجهة البدء. اختبر زر Home وإعادة تشغيل التلفزيون والاستيقاظ من السكون.";
+            } else if (roleHeld && !effectivePackage.isEmpty()) {
+                message = "تم اختيار تطبيق الجامع، لكن التلفزيون ما زال يفتح واجهة أخرى عند الضغط على Home. راجع إعدادات واجهة البدء في التلفزيون.";
+            } else if (effectivePackage.isEmpty()) {
+                message = "تعذر تحديد واجهة البدء الفعلية. افتح إعدادات التلفزيون للتحقق؛ التشغيل التلقائي غير مؤكّد.";
+            } else {
+                message = "التطبيق ليس واجهة البدء الافتراضية. اختره في نافذة النظام إن أتاحها التلفزيون.";
+            }
+            status.put("message", message);
         } catch (org.json.JSONException ignored) { }
         return status;
     }
@@ -548,6 +574,12 @@ public final class MainActivity extends Activity {
     private void requestOptionalHomeRole() {
         if (!homeOperatorActionAllowed()) return;
         if (isDefaultHome()) { publishHomeResult(); return; }
+        if (hasHomeRole()) {
+            // Re-requesting an already held role may return without a chooser.
+            publishNotice(homeStatusJson().optString("message", "راجع إعدادات واجهة البدء في التلفزيون."));
+            launchHomeSettings();
+            return;
+        }
         if (Build.VERSION.SDK_INT >= 29) {
             RoleManager manager = homeRoleManager();
             if (manager != null) {

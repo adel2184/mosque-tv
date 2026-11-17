@@ -45,7 +45,7 @@ try {
   $qrHash = Byte-Hash (Read-ApkBytes 'assets/web/assets/announcements/donation-qr.jpg')
   if ($qrHash -ne (Get-FileHash -LiteralPath (Join-Path $projectRoot 'assets/announcements/donation-qr.jpg') -Algorithm SHA256).Hash.ToLowerInvariant()) { throw 'Donation QR changed in APK.' }
   if ($build.badging -notmatch "package: name='sa.mosque.display'" -or $build.badging -notmatch 'leanback-launchable-activity:') { throw 'TV launcher or package missing.' }
-  if ($build.badging -notmatch "versionCode='5'" -or $build.badging -notmatch "versionName='2.0.2'" -or $build.manifestTree -notmatch 'android.intent.category.HOME' -or $build.manifestTree -notmatch 'android.intent.category.DEFAULT') { throw 'Updated HOME candidate filter/version missing.' }
+  if ($build.badging -notmatch "versionCode='6'" -or $build.badging -notmatch "versionName='2.0.3'" -or $build.manifestTree -notmatch 'android.intent.category.HOME' -or $build.manifestTree -notmatch 'android.intent.category.DEFAULT') { throw 'Updated HOME candidate filter/version missing.' }
   $permissions = @([regex]::Matches($build.badging,"uses-permission: name='([^']+)'") | ForEach-Object {$_.Groups[1].Value})
   $expectedPermissions = @('android.permission.INTERNET','android.permission.ACCESS_NETWORK_STATE','android.permission.REQUEST_INSTALL_PACKAGES')
   if (@(Compare-Object $expectedPermissions $permissions).Count -ne 0) { throw 'Unexpected app permission set.' }
@@ -55,7 +55,7 @@ try {
   if ($build.signatureVerification -notmatch 'Signer #1 certificate SHA-256 digest: 4cb9564d63fd3f037d12e2ed98af1bf7255a7fb7ef53d6a57aba020b5e9b061e') { throw 'Signing identity changed; upgrade would not preserve installed app.' }
   $result = [ordered]@{
     verifiedAt = [DateTime]::UtcNow.ToString('o'); apkSHA256 = $apkHash; apkBytes = (Get-Item -LiteralPath $apkPath).Length
-    entryCount = $names.Count; minSdk = $build.minSdk; targetSdk = $build.targetSdk; versionCode = 5; tvLauncher = $true; homeCandidate = $true
+    entryCount = $names.Count; minSdk = $build.minSdk; targetSdk = $build.targetSdk; versionCode = 6; tvLauncher = $true; homeCandidate = $true
     requestedPermissions = $permissions; updateRepository = 'adel2184/mosque-tv'; signatureV2 = $true; signatureV3 = $true; originalSigningIdentity = $true; coreScriptUnchanged = $true; tvBridgeMatchesSource = $true
     embeddedJsonBlocks = $jsonCount; prayerRecords = 732; adhkar = $enabled.Count; originalQrSHA256 = $qrHash
     licensesIncluded = $true; privateSigningFilesIncluded = $false
