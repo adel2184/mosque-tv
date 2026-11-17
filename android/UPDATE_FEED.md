@@ -13,8 +13,8 @@ Each release must attach `update.json` and the named APK to that same release:
 {
   "schemaVersion": 1,
   "packageName": "sa.mosque.display",
-  "versionName": "2.2.0",
-  "versionCode": 8,
+  "versionName": "2.3.0",
+  "versionCode": 9,
   "minSdk": 24,
   "apk": {
     "name": "mosque-display-tv.apk",
@@ -31,6 +31,11 @@ another current signing certificate, an incompatible minSdk, truncated/oversized
 downloads and hash mismatches. The hard maximum is 32 MiB, and config can lower it.
 The signing key must remain private and must remain the same across releases.
 No external signing service or runtime library is introduced.
+
+A signing-certificate mismatch must leave the installed app in place. Never automate
+uninstallation to work around it. Obtain an APK signed with the original key. Any
+later consideration of manual removal requires exporting recoverable settings first
+and clear operator approval; uninstalling removes the app's private local data.
 
 Initial asset URLs must be HTTPS `github.com/OWNER/REPOSITORY/releases/download/TAG/NAME`
 from the GitHub release response. Redirects may continue only to the same original

@@ -14,3 +14,6 @@ qa/*.jpg
 /qa/as/
 /assets/data/location-catalog.js
 /data/location-catalog.json
+.netlify/
+**/node_modules/
+/services/reports/.netlify/

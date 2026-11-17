@@ -1,0 +1,20 @@
+CleanYourTV community profile data
+
+Source: https://github.com/Gathin23/cleanyourtv
+Pinned commit: 3cd274f866b71ec15e4f7d8c796514b0baa8033c
+Pinned source paths: examples/*/tv.json and examples/*/debloat.txt; root LICENSE.
+
+416 community profile records are included. This count does not mean 416 TVs were
+validated by Mosque TV, and the upstream lists are not an automatic safety verdict.
+Only profile ID, brand, explicit Android/Google TV major version, a model slug
+derived from the ID, and active valid package names are retained. Freeform notes,
+source device descriptions, code, scripts, binary programs and fonts are excluded.
+Each selected raw source blob was verified against the pinned Git tree before
+generation. No upstream scripts were executed and no archive was fully extracted.
+
+Derived by dev/generate-device-profiles.cjs. Runtime package protection and explicit
+operator confirmation remain mandatory; exact model/version matching may refuse
+unknown, ambiguous or unsupported devices. No model or device aliases are invented.
+
+Copyright (c) 2026 Gathin. MIT license reproduced verbatim in CleanYourTV-MIT.txt.
+The root license also mentions the upstream Outfit font; that font is not included.

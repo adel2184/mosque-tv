@@ -402,6 +402,7 @@ public final class MainActivity extends Activity {
             runOnUiThread(() -> {
                 if (power != null) power.prayer(active);
                 DeviceSetupActivity.setPrayerActive(active);
+                FeedbackActivity.setPrayerActive(active);
                 if (active) dismissOperatorDialog();
                 if (active && speed != null) speed.cancel();
                 if (active && setupFetcher != null) setupFetcher.cancel();

@@ -83,6 +83,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node android/test-setup-fetch.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node android/test-device-optimization.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node android/test-device-profiles.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node services/reports/test/reports.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node android/test-bridge.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node android/test-tv-settings.cjs

@@ -27,8 +27,15 @@ fs.copyFileSync(path.join(root,'DATA_SOURCES.md'),path.join(work,'assets/web/DAT
 fs.copyFileSync(path.join(__dirname,'SOURCES_LICENSES.md'),path.join(work,'assets/web/ANDROID_SOURCES_LICENSES.md'));
 fs.copyFileSync(path.join(__dirname,'update-config.json'),path.join(work,'assets/update-config.json'));
 fs.copyFileSync(path.join(__dirname,'phone.html'),path.join(work,'assets/phone.html'));
+fs.cpSync(path.join(root,'services/reports/public'),path.join(work,'assets/reports'),{recursive:true});
+const deviceProfiles=JSON.parse(fs.readFileSync(path.join(__dirname,'device-profiles.json'),'utf8'));
+fs.copyFileSync(path.join(__dirname,'device-profiles.json'),path.join(work,'assets/device-profiles.json'));
+const profilePackages=[...new Set(deviceProfiles.profiles.flatMap(profile=>profile.packages))];
+if(profilePackages.some(name=>!/^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+$/.test(name)))throw Error('Invalid model package query.');
+const packagedManifest=path.join(work,'AndroidManifest.xml');
+fs.writeFileSync(packagedManifest,fs.readFileSync(path.join(__dirname,'AndroidManifest.xml'),'utf8').replace('</queries>',profilePackages.map(name=>'<package android:name="'+name+'" />').join('\n')+'\n</queries>'));
 run(aapt2,['compile','--dir',path.join(__dirname,'res'),'-o',path.join(work,'resources.zip')]);
-run(aapt2,['link','-o',path.join(work,'unsigned.apk'),'--manifest',path.join(__dirname,'AndroidManifest.xml'),'-I',androidJar,'--java',path.join(work,'generated'),'-A',path.join(work,'assets'),'--min-sdk-version','24','--target-sdk-version','35',path.join(work,'resources.zip')]);
+run(aapt2,['link','-o',path.join(work,'unsigned.apk'),'--manifest',packagedManifest,'-I',androidJar,'--java',path.join(work,'generated'),'-A',path.join(work,'assets'),'--min-sdk-version','24','--target-sdk-version','35',path.join(work,'resources.zip')]);
 const bootClasspath=[androidJar,path.join(buildTools,'core-lambda-stubs.jar')].map(file=>path.relative(root,file)).join(path.delimiter);
 run(javac,['-encoding','UTF-8','-source','8','-target','8','-bootclasspath',bootClasspath,'-d',path.join(work,'classes'),...walk(path.join(__dirname,'src'),'.java'),...walk(path.join(__dirname,'vendor/qrcodegen'),'.java'),...walk(path.join(work,'generated'),'.java')]);
 run(java,['-cp',path.join(buildTools,'lib/d8.jar'),'com.android.tools.r8.D8','--min-api','24','--lib',androidJar,'--output',path.join(work,'dex'),...walk(path.join(work,'classes'),'.class')]);

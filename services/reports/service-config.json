@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "origin": "https://mosque-tv-reports-adel2184.netlify.app",
+  "endpoint": "/api/reports",
+  "defaultAppVersion": "2.3.0"
+}
