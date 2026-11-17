@@ -1,0 +1,17 @@
+GeoNames geographic data attribution
+
+Contains adapted GeoNames data, snapshot downloaded 2026-11-17.
+Source and publisher: GeoNames, https://www.geonames.org/
+Downloads: https://download.geonames.org/export/dump/
+License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+https://creativecommons.org/licenses/by/4.0/
+Full license: licenses/geonames-CC-BY-4.0.txt
+
+Changes: selected cities15000 and capitals; retained GeoNames IDs, WGS84
+coordinates and IANA timezone IDs; joined country records and language-tagged
+ar/en alternate names from the included country extracts; used ASCII/main-name
+fallbacks where a tagged translation was unavailable; generated country display
+names using Intl.DisplayNames; removed other fields; sorted and converted to JSON.
+Exact input filenames, publisher URLs and SHA-256 hashes are recorded in
+dev/vendor/geonames/source-manifest.json. No endorsement by GeoNames is implied.
+Data is supplied as is, without a warranty of accuracy, timeliness or completeness.

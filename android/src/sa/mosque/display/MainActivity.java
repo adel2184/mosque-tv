@@ -86,10 +86,15 @@ public final class MainActivity extends Activity {
     private PowerController power;
     private TvControls controls;
     private NetworkSpeedTest speed;
+    private SetupTimetableFetcher setupFetcher;
     private UpdateManager updater;
     private LocalPhoneServer phone;
     private volatile boolean foreground;
     private int wakingKey = -1;
+
+    private String ui(String ar, String en) {
+        return "en".equals(getSharedPreferences("mosque-tv-setup", 0).getString("language", "ar")) ? en : ar;
+    }
 
     private final Runnable menuLongPress = new Runnable() {
         @Override public void run() {
@@ -112,6 +117,16 @@ public final class MainActivity extends Activity {
         setContentView(frame);
         configureWebView();
         controls = new TvControls(this);
+        android.content.SharedPreferences setupPreferences = getSharedPreferences("mosque-tv-setup", 0);
+        if (!setupPreferences.contains("state")) {
+            boolean upgrade = false;
+            try { android.content.pm.PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0); upgrade = info.firstInstallTime < info.lastUpdateTime; } catch (Exception ignored) { }
+            setupPreferences.edit().putString("state", upgrade ? "legacy" : "required").commit();
+        }
+        setupFetcher = new SetupTimetableFetcher(this, new SetupTimetableFetcher.Host() {
+            @Override public boolean permitted() { return operatorAllowed(); }
+            @Override public void onResult(JSONObject result) { publishNative("mosque-native-setup-result", result); }
+        });
         speed = new NetworkSpeedTest(this, new NetworkSpeedTest.Host() {
             @Override public boolean permitted() { return operatorAllowed(); }
             @Override public void onResult(JSONObject value) { publishNative("mosque-native-control-result", value); }
@@ -164,7 +179,7 @@ public final class MainActivity extends Activity {
         webView.setWebViewClient(new LocalClient());
         webView.setWebChromeClient(new LocalChrome());
         webView.setDownloadListener((url, userAgent, disposition, mime, length) ->
-                publishNotice("استخدم زر تصدير الإعدادات أو جدول المواقيت داخل الشاشة."));
+                publishNotice(ui("استخدم زر تصدير الإعدادات أو جدول المواقيت داخل الشاشة.", "Use the screen's settings or timetable export button.")));
     }
 
     private static boolean localOrigin(Uri uri) {
@@ -214,7 +229,7 @@ public final class MainActivity extends Activity {
         headers.put("X-Content-Type-Options", "nosniff");
         headers.put("Content-Security-Policy", "default-src 'none'; script-src 'self' 'unsafe-inline'; "
                 + "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; "
-                + "connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'");
+                + "connect-src 'none'; worker-src blob:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'");
         return headers;
     }
 
@@ -280,7 +295,7 @@ public final class MainActivity extends Activity {
             if (praying || !localIndex(view.getUrl()) || fileCallback != null || exportBusy
                     || params.getMode() != FileChooserParams.MODE_OPEN) {
                 callback.onReceiveValue(null);
-                publishNotice("أكمل العملية الحالية أولًا، ثم اختر ملف JSON واحدًا.");
+                publishNotice(ui("أكمل العملية الحالية أولًا، ثم اختر ملف JSON واحدًا.", "Finish the current operation first, then select one JSON file."));
                 return true;
             }
             fileCallback = callback;
@@ -293,14 +308,15 @@ public final class MainActivity extends Activity {
             catch (ActivityNotFoundException | SecurityException error) {
                 fileCallback = null;
                 callback.onReceiveValue(null);
-                publishNotice("منتقي الملفات غير متاح على هذا الجهاز. جرّب مدير مستندات يدعم اختيار ملفات JSON.");
+                publishNotice(ui("منتقي الملفات غير متاح على هذا الجهاز. جرّب مدير مستندات يدعم اختيار ملفات JSON.", "The file picker is unavailable on this device. Try a document manager that supports selecting JSON files."));
             }
             return true;
         }
         @Override public boolean onJsConfirm(WebView view, String url, String message, JsResult result) {
             // Pending JsResult suspends ALL JavaScript, including the prayer clock. Never leave it pending.
             result.cancel();
-            if (localIndex(url) && message != null && message.startsWith("استعادة الإعدادات")) {
+            if (localIndex(url) && message != null && (message.startsWith("استعادة الإعدادات")
+                    || "Reset the draft? Changes will apply only after saving.".equals(message))) {
                 showDefaultsConfirmation(message);
             }
             return true;
@@ -319,6 +335,24 @@ public final class MainActivity extends Activity {
     }
 
     public final class NativeBridge {
+        @JavascriptInterface public String setupStatus() {
+            JSONObject result = new JSONObject();
+            String state = getSharedPreferences("mosque-tv-setup", 0).getString("state", "required");
+            try { result.put("required", "required".equals(state)).put("legacyUpgrade", !"required".equals(state)); } catch (Exception ignored) { }
+            return result.toString();
+        }
+        @JavascriptInterface public void markSetupCompleted(String language) { runOnUiThread(() -> {
+            if (operatorAllowed() && ("ar".equals(language) || "en".equals(language))) getSharedPreferences("mosque-tv-setup", 0).edit().putString("state", "complete").putString("language", language).commit();
+        }); }
+        @JavascriptInterface public void startSetupFetch(String request) { runOnUiThread(() -> { if (operatorAllowed() && setupFetcher != null) setupFetcher.start(request); }); }
+        @JavascriptInterface public void cancelSetupFetch() { runOnUiThread(() -> { if (setupFetcher != null) setupFetcher.cancel(); }); }
+        @JavascriptInterface public void showKeyboard() { runOnUiThread(() -> {
+            if (!operatorAllowed()) return;
+            webView.requestFocus();
+            android.view.inputmethod.InputMethodManager keyboard = (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (keyboard != null) keyboard.showSoftInput(webView, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+        }); }
+        @JavascriptInterface public void setProfileTimezone(String zone) { runOnUiThread(() -> { if (operatorAllowed() && power != null) power.timezone(zone); }); }
         @JavascriptInterface public String deviceStatus() { return controls == null ? "{}" : controls.status().toString(); }
         @JavascriptInterface public String speedStatus() { return speed == null ? "{}" : speed.status().toString(); }
         @JavascriptInterface public void startSpeedTest() { runOnUiThread(() -> { if (operatorAllowed() && speed != null) speed.start(); }); }
@@ -327,10 +361,12 @@ public final class MainActivity extends Activity {
             if (!operatorAllowed() || power == null) return;
             final int[] minutes = {15, 30, 60, 90, 0};
             int remaining = power.status().optInt("sleepMinutes", 0);
-            showOperatorDialog(new AlertDialog.Builder(MainActivity.this).setTitle("مؤقت إيقاف العرض" + (remaining > 0 ? " — متبقٍ نحو " + remaining + " دقيقة" : ""))
-                .setItems(new String[]{"بعد 15 دقيقة", "بعد 30 دقيقة", "بعد ساعة", "بعد ساعة ونصف", "إلغاء المؤقت"}, (dialog, which) -> {
+            showOperatorDialog(new AlertDialog.Builder(MainActivity.this).setTitle(ui("مؤقت إيقاف العرض", "Display sleep timer")
+                    + (remaining > 0 ? ui(" — متبقٍ نحو " + remaining + " دقيقة", " — about " + remaining + " minutes remaining") : ""))
+                .setItems(new String[]{ui("بعد 15 دقيقة", "After 15 minutes"), ui("بعد 30 دقيقة", "After 30 minutes"),
+                        ui("بعد ساعة", "After 1 hour"), ui("بعد ساعة ونصف", "After 1 hour 30 minutes"), ui("إلغاء المؤقت", "Cancel timer")}, (dialog, which) -> {
                     if (operatorAllowed()) power.sleep(minutes[which]);
-                }).setNegativeButton("رجوع", null).create());
+                }).setNegativeButton(ui("رجوع", "Back"), null).create());
         }); }
         @JavascriptInterface public void displayOff() { runOnUiThread(() -> {
             if (!operatorAllowed() || power == null) return;
@@ -346,7 +382,7 @@ public final class MainActivity extends Activity {
         @JavascriptInterface public void openControl(String key) { runOnUiThread(() -> {
             if (!operatorAllowed()) return;
             if ("phone".equals(key)) { showPhonePairing(); return; }
-            if (!controls.open(key)) publishNotice("هذا الاختصار غير متاح على التلفزيون. افتح إعدادات النظام للتحقق.");
+            if (!controls.open(key)) publishNotice(ui("هذا الاختصار غير متاح على التلفزيون. افتح إعدادات النظام للتحقق.", "This shortcut is unavailable on this TV. Check the system settings."));
         }); }
         @JavascriptInterface public void deviceSetup() { runOnUiThread(() -> {
             if (operatorAllowed()) { if (power != null) power.operator(); startActivity(new Intent(MainActivity.this, DeviceSetupActivity.class)); }
@@ -368,19 +404,20 @@ public final class MainActivity extends Activity {
                 DeviceSetupActivity.setPrayerActive(active);
                 if (active) dismissOperatorDialog();
                 if (active && speed != null) speed.cancel();
+                if (active && setupFetcher != null) setupFetcher.cancel();
             });
         }
         @JavascriptInterface public void exportJson(String filename, String json) {
             if (json == null || json.length() > MAX_JSON_BYTES
                     || json.getBytes(StandardCharsets.UTF_8).length > MAX_JSON_BYTES) {
-                runOnUiThread(() -> publishExportResult(false, false, "ملف التصدير أكبر من الحد المسموح (3 ميغابايت)."));
+                runOnUiThread(() -> publishExportResult(false, false, ui("ملف التصدير أكبر من الحد المسموح (3 ميغابايت).", "The export exceeds the 3 MB limit.")));
                 return;
             }
             final String safeName = safeFilename(filename);
             runOnUiThread(() -> {
                 if (isFinishing() || isDestroyed() || !localIndex(webView.getUrl())) return;
                 if (exportBusy || fileCallback != null) {
-                    publishExportResult(false, false, "توجد عملية ملفات قيد التنفيذ؛ أكملها أولًا.");
+                    publishExportResult(false, false, ui("توجد عملية ملفات قيد التنفيذ؛ أكملها أولًا.", "Finish the current file operation first."));
                     return;
                 }
                 if (praying) return;
@@ -394,7 +431,7 @@ public final class MainActivity extends Activity {
                 try { startActivityForResult(intent, CREATE_JSON); }
                 catch (ActivityNotFoundException | SecurityException error) {
                     pendingExport = null; exportBusy = false;
-                    publishExportResult(false, false, "تعذر فتح نافذة حفظ الملف على هذا الجهاز.");
+                    publishExportResult(false, false, ui("تعذر فتح نافذة حفظ الملف على هذا الجهاز.", "The save-file dialog could not be opened on this device."));
                 }
             });
         }
@@ -415,7 +452,7 @@ public final class MainActivity extends Activity {
             homeRolePending = false;
             publishHomeResult();
             publishNotice(homeStatusJson().optString("message",
-                    "راجع اختيار واجهة البدء في إعدادات التلفزيون."));
+                    ui("راجع اختيار واجهة البدء في إعدادات التلفزيون.", "Check the default home app in the TV settings.")));
         } else if (request == OPEN_JSON) {
             ValueCallback<Uri[]> callback = fileCallback;
             fileCallback = null;
@@ -429,10 +466,10 @@ public final class MainActivity extends Activity {
             final Uri uri = result == RESULT_OK && data != null ? data.getData() : null;
             if (result != RESULT_OK || uri == null) {
                 exportBusy = false;
-                publishExportResult(false, true, "أُلغي التصدير؛ لم يتغير ملف الإعدادات داخل التطبيق.");
+                publishExportResult(false, true, ui("أُلغي التصدير؛ لم يتغير ملف الإعدادات داخل التطبيق.", "Export cancelled. The app's saved settings were unchanged."));
             } else if (json == null || !"content".equals(uri.getScheme())) {
                 exportBusy = false;
-                publishExportResult(false, false, "تعذر إكمال التصدير؛ افتح الإعدادات وأعد المحاولة.");
+                publishExportResult(false, false, ui("تعذر إكمال التصدير؛ افتح الإعدادات وأعد المحاولة.", "Export could not be completed. Open settings and try again."));
             } else {
                 fileWriter.execute(() -> {
                     boolean saved = false;
@@ -447,8 +484,8 @@ public final class MainActivity extends Activity {
                     final boolean success = saved;
                     runOnUiThread(() -> {
                         exportBusy = false;
-                        publishExportResult(success, false, success ? "حُفظ ملف JSON في المكان الذي اخترته."
-                                : "تعذر حفظ الملف. اختر وجهة قابلة للكتابة وأعد المحاولة.");
+                        publishExportResult(success, false, success ? ui("حُفظ ملف JSON في المكان الذي اخترته.", "The JSON file was saved to the selected location.")
+                                : ui("تعذر حفظ الملف. اختر وجهة قابلة للكتابة وأعد المحاولة.", "The file could not be saved. Select a writable location and try again."));
                     });
                 });
             }
@@ -486,15 +523,18 @@ public final class MainActivity extends Activity {
             for (int y = 0; y < side; y++) for (int x = 0; x < side; x++) pixels[y * side + x] = code.getModule(x / scale - border, y / scale - border) ? Color.BLACK : Color.WHITE;
             bitmap.setPixels(pixels, 0, side, 0, 0, side, side);
             LinearLayout view = new LinearLayout(this); view.setOrientation(LinearLayout.VERTICAL); view.setGravity(Gravity.CENTER); view.setPadding(24, 16, 24, 16);
-            ImageView qr = new ImageView(this); qr.setImageBitmap(bitmap); qr.setContentDescription("رمز اقتران مؤقت بريموت الجوال");
+            ImageView qr = new ImageView(this); qr.setImageBitmap(bitmap); qr.setContentDescription(ui("رمز اقتران مؤقت بريموت الجوال", "Temporary phone remote pairing code"));
             int dimension = (int)(260 * getResources().getDisplayMetrics().density);
             view.addView(qr, new LinearLayout.LayoutParams(dimension, dimension));
             TextView description = new TextView(this); description.setGravity(Gravity.CENTER); description.setTextSize(17);
-            description.setText("صِل الجوال والتلفاز بالشبكة المحلية نفسها ثم امسح الرمز.\nلا يحتاج إنترنت. الجلسة 15 دقيقة؛ الرمز خاص بالمشرف.\n" + link.substring(0, link.indexOf('#')));
+            description.setText(ui("صِل الجوال والتلفاز بالشبكة المحلية نفسها ثم امسح الرمز.\nلا يحتاج إنترنت. الجلسة 15 دقيقة؛ الرمز خاص بالمشرف.\n",
+                    "Connect the phone and TV to the same local network, then scan the code.\nNo internet is needed. The session lasts 15 minutes; keep the code private to the operator.\n")
+                    + link.substring(0, link.indexOf('#')));
             view.addView(description);
-            showOperatorDialog(new AlertDialog.Builder(this).setTitle("التحكم من الجوال").setView(view)
-                    .setPositiveButton("متابعة العرض", null).setNegativeButton("إيقاف الاقتران", (dialog, which) -> phone.stop()).create());
-        } catch (Exception error) { publishNotice("تعذر بدء اقتران الجوال. صِل الجهازين بشبكة محلية واحدة؛ لا يلزم إنترنت."); }
+            showOperatorDialog(new AlertDialog.Builder(this).setTitle(ui("التحكم من الجوال", "Phone remote")).setView(view)
+                    .setPositiveButton(ui("متابعة العرض", "Continue display"), null)
+                    .setNegativeButton(ui("إيقاف الاقتران", "Stop pairing"), (dialog, which) -> phone.stop()).create());
+        } catch (Exception error) { publishNotice(ui("تعذر بدء اقتران الجوال. صِل الجهازين بشبكة محلية واحدة؛ لا يلزم إنترنت.", "Phone pairing could not be started. Connect both devices to the same local network; no internet is needed.")); }
     }
     private void phoneKey(String key) {
         if (!foreground || praying || webView == null) return;
@@ -510,7 +550,7 @@ public final class MainActivity extends Activity {
     }
     private void phoneText(String text) {
         if (!operatorAllowed()) return;
-        evaluate("(function(){var d=document.getElementById('settingsDialog'),n=document.activeElement;"
+        evaluate("(function(){if(window.MosqueSetup&&window.MosqueSetup.isOpen()&&window.MosqueSetup.acceptText(" + JSONObject.quote(text) + "))return;var d=document.getElementById('settingsDialog'),n=document.activeElement;"
                 + "if(!d||!d.open||!n||!d.contains(n)||!((n.tagName==='INPUT'&&['text','search','url','tel'].indexOf(n.type)>=0)||n.tagName==='TEXTAREA'))return;"
                 + "n.value=" + JSONObject.quote(text) + ";if(n.maxLength>0)n.value=n.value.slice(0,n.maxLength);n.dispatchEvent(new Event('input',{bubbles:true}));})()");
     }
@@ -572,13 +612,13 @@ public final class MainActivity extends Activity {
                     || canResolveSettings(Settings.ACTION_SETTINGS));
             String message;
             if (effectiveDefault) {
-                message = "النظام يختار شاشة الجامع لواجهة البدء. اختبر زر Home وإعادة تشغيل التلفزيون والاستيقاظ من السكون.";
+                message = ui("النظام يختار شاشة الجامع لواجهة البدء. اختبر زر Home وإعادة تشغيل التلفزيون والاستيقاظ من السكون.", "The system selects Mosque Display as the home app. Test the Home button, TV restart and wake from standby.");
             } else if (roleHeld && !effectivePackage.isEmpty()) {
-                message = "تم اختيار تطبيق الجامع، لكن التلفزيون ما زال يفتح واجهة أخرى عند الضغط على Home. راجع إعدادات واجهة البدء في التلفزيون.";
+                message = ui("تم اختيار تطبيق الجامع، لكن التلفزيون ما زال يفتح واجهة أخرى عند الضغط على Home. راجع إعدادات واجهة البدء في التلفزيون.", "Mosque Display was selected, but the TV still opens another launcher when Home is pressed. Check the TV's default home app settings.");
             } else if (effectivePackage.isEmpty()) {
-                message = "تعذر تحديد واجهة البدء الفعلية. افتح إعدادات التلفزيون للتحقق؛ التشغيل التلقائي غير مؤكّد.";
+                message = ui("تعذر تحديد واجهة البدء الفعلية. افتح إعدادات التلفزيون للتحقق؛ التشغيل التلقائي غير مؤكّد.", "The active home app could not be determined. Check the TV settings; automatic startup is unconfirmed.");
             } else {
-                message = "التطبيق ليس واجهة البدء الافتراضية. اختره في نافذة النظام إن أتاحها التلفزيون.";
+                message = ui("التطبيق ليس واجهة البدء الافتراضية. اختره في نافذة النظام إن أتاحها التلفزيون.", "This app is not the default home app. Select it in the system dialog if your TV offers that choice.");
             }
             status.put("message", message);
         } catch (org.json.JSONException ignored) { }
@@ -601,7 +641,7 @@ public final class MainActivity extends Activity {
         if (isDefaultHome()) { publishHomeResult(); return; }
         if (hasHomeRole()) {
             // Re-requesting an already held role may return without a chooser.
-            publishNotice(homeStatusJson().optString("message", "راجع إعدادات واجهة البدء في التلفزيون."));
+            publishNotice(homeStatusJson().optString("message", ui("راجع إعدادات واجهة البدء في التلفزيون.", "Check the TV's default home app settings.")));
             launchHomeSettings();
             return;
         }
@@ -632,14 +672,14 @@ public final class MainActivity extends Activity {
         if (launchSettingsAction(Settings.ACTION_HOME_SETTINGS)
                 || launchSettingsAction(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
                 || launchSettingsAction(Settings.ACTION_SETTINGS)) return;
-        publishNotice("لم يعرض هذا التلفزيون صفحة إعدادات واجهة البدء. راجع إعدادات الجهاز من الريموت.");
+        publishNotice(ui("لم يعرض هذا التلفزيون صفحة إعدادات واجهة البدء. راجع إعدادات الجهاز من الريموت.", "This TV did not provide a home app settings page. Open the device settings with the remote."));
         publishHomeResult();
     }
 
     private void launchSystemSettings() {
         if (!homeOperatorActionAllowed()) return;
         if (!launchSettingsAction(Settings.ACTION_SETTINGS)) {
-            publishNotice("تعذر فتح إعدادات التلفزيون من التطبيق. استخدم زر إعدادات الجهاز في الريموت.");
+            publishNotice(ui("تعذر فتح إعدادات التلفزيون من التطبيق. استخدم زر إعدادات الجهاز في الريموت.", "The TV settings could not be opened from the app. Use the remote's device settings button."));
         }
     }
 
@@ -652,9 +692,9 @@ public final class MainActivity extends Activity {
         webView.evaluateJavascript("!!(document.body&&!document.body.classList.contains('praying')&&document.getElementById('settingsDialog').open)", ready -> {
             if (!"true".equals(ready) || praying || isFinishing() || isDestroyed()) return;
             dismissOperatorDialog();
-            AlertDialog dialog = new AlertDialog.Builder(this).setTitle("استعادة الإعدادات الأصلية")
-                    .setMessage(message).setNegativeButton("إلغاء", null)
-                    .setPositiveButton("استعادة", (unused, which) -> {
+            AlertDialog dialog = new AlertDialog.Builder(this).setTitle(ui("استعادة الإعدادات الأصلية", "Restore default settings"))
+                    .setMessage(message).setNegativeButton(ui("إلغاء", "Cancel"), null)
+                    .setPositiveButton(ui("استعادة", "Restore"), (unused, which) -> {
                         // Replay only the known local defaults action; imported strings are never executed.
                         evaluate("(function(){if(document.body.classList.contains('praying'))return;"
                                 + "var d=document.getElementById('settingsDialog'),b=document.getElementById('defaultsButton');"
@@ -670,7 +710,9 @@ public final class MainActivity extends Activity {
         operatorDialog = dialog;
         dialog.setOnDismissListener(unused -> { if (operatorDialog == dialog) operatorDialog = null; });
         dialog.show();
-        if (dialog.getWindow() != null) dialog.getWindow().getDecorView().setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        if (dialog.getWindow() != null) dialog.getWindow().getDecorView().setLayoutDirection(
+                "en".equals(getSharedPreferences("mosque-tv-setup", 0).getString("language", "ar"))
+                        ? View.LAYOUT_DIRECTION_LTR : View.LAYOUT_DIRECTION_RTL);
     }
 
     private void dismissOperatorDialog() {
@@ -680,6 +722,7 @@ public final class MainActivity extends Activity {
     @Override public void onBackPressed() {
         if (praying) return;
         webView.evaluateJavascript("(function(){if(document.body&&document.body.classList.contains('praying'))return 'prayer';"
+                + "if(window.MosqueSetup&&window.MosqueSetup.isOpen()&&window.MosqueSetup.handleBack())return 'setup';"
                 + "if(window.MosqueControl&&window.MosqueControl.handleBack())return 'control';"
                 + "if(window.MosqueTV&&window.MosqueTV.handleBack&&window.MosqueTV.handleBack())return 'dialog';"
                 + "var d=document.getElementById('settingsDialog');if(d&&d.open){var b=document.getElementById('cancelButton');"
@@ -688,16 +731,16 @@ public final class MainActivity extends Activity {
             dismissOperatorDialog();
             if (isDefaultHome()) {
                 // Finishing a default HOME activity can relaunch it immediately; always leave a recovery path.
-                showOperatorDialog(new AlertDialog.Builder(this).setTitle("خيارات واجهة البدء")
-                        .setMessage("شاشة الجامع هي واجهة البدء الافتراضية. يمكنك تغييرها أو فتح إعدادات التلفزيون.")
-                        .setPositiveButton("تغيير واجهة البدء", (dialog, which) -> launchHomeSettings())
-                        .setNeutralButton("إعدادات التلفزيون", (dialog, which) -> launchSystemSettings())
-                        .setNegativeButton("إلغاء", null).create());
+                showOperatorDialog(new AlertDialog.Builder(this).setTitle(ui("خيارات واجهة البدء", "Home app options"))
+                        .setMessage(ui("شاشة الجامع هي واجهة البدء الافتراضية. يمكنك تغييرها أو فتح إعدادات التلفزيون.", "Mosque Display is the default home app. You can change it or open the TV settings."))
+                        .setPositiveButton(ui("تغيير واجهة البدء", "Change home app"), (dialog, which) -> launchHomeSettings())
+                        .setNeutralButton(ui("إعدادات التلفزيون", "TV settings"), (dialog, which) -> launchSystemSettings())
+                        .setNegativeButton(ui("إلغاء", "Cancel"), null).create());
                 return;
             }
-            showOperatorDialog(new AlertDialog.Builder(this).setTitle("الخروج من شاشة الجامع؟")
-                    .setMessage("ستبقى الإعدادات المحفوظة متاحة عند فتح التطبيق مجددًا.")
-                    .setNegativeButton("البقاء", null).setPositiveButton("خروج", (dialog, which) -> finish()).create());
+            showOperatorDialog(new AlertDialog.Builder(this).setTitle(ui("الخروج من شاشة الجامع؟", "Exit Mosque Display?"))
+                    .setMessage(ui("ستبقى الإعدادات المحفوظة متاحة عند فتح التطبيق مجددًا.", "Your saved settings will be available when you open the app again."))
+                    .setNegativeButton(ui("البقاء", "Stay"), null).setPositiveButton(ui("خروج", "Exit"), (dialog, which) -> finish()).create());
         });
     }
 
@@ -798,6 +841,7 @@ public final class MainActivity extends Activity {
         wakingKey = -1;
         menuDown = false; handler.removeCallbacks(menuLongPress); dismissOperatorDialog();
         if (speed != null) speed.cancel();
+        if (setupFetcher != null) setupFetcher.cancel();
         if (webView != null) webView.onPause();
         super.onPause();
     }
@@ -811,6 +855,7 @@ public final class MainActivity extends Activity {
         foreground = false;
         if (power != null) power.destroy();
         if (speed != null) speed.destroy();
+        if (setupFetcher != null) setupFetcher.destroy();
         if (updater != null) updater.destroy();
         if (phone != null) phone.stop();
         handler.removeCallbacks(menuLongPress); dismissOperatorDialog();

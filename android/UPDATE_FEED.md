@@ -13,8 +13,8 @@ Each release must attach `update.json` and the named APK to that same release:
 {
   "schemaVersion": 1,
   "packageName": "sa.mosque.display",
-  "versionName": "2.1.0",
-  "versionCode": 7,
+  "versionName": "2.2.0",
+  "versionCode": 8,
   "minSdk": 24,
   "apk": {
     "name": "mosque-display-tv.apk",

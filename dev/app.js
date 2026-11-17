@@ -1,7 +1,9 @@
 (function () {
   'use strict';
-  // All civil keys and event timestamps use Riyadh (+03:00), never the host zone.
-  const ZONE = 'Asia/Riyadh', DAY = 86400000, OFFSET = 10800000;
+  // Legacy screens retain Riyadh; configured screens use their selected IANA zone.
+  const DAY = 86400000, OFFSET = 10800000;
+  let ZONE='Asia/Riyadh',activeProfile=null,installation=null,installationError='',setupPending=false;
+  const locationEngine=window.MosqueLocation,profileStore=window.MosqueProfileStore;
   const KEYS = ['fajr', 'sunrise', 'dhuhr', 'asr', 'maghrib', 'isha'];
   const PRAYERS = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
   const NAMES = {fajr:'الفجر', sunrise:'الشروق', dhuhr:'الظهر', asr:'العصر', maghrib:'المغرب', isha:'العشاء'};
@@ -11,7 +13,9 @@
   const clone = value => JSON.parse(JSON.stringify(value));
   const embedded = id => JSON.parse(document.getElementById(id).textContent);
   const defaults = embedded('config-data');
-  const calendar = embedded('calendar-data');
+  let calendar = embedded('calendar-data');
+  const setupCalendar=document.getElementById('setup-calendar-data')?embedded('setup-calendar-data'):calendar;
+  const setupCatalog=window.MosquePlaces||{countries:[],methods:[]};
   const fixtures = embedded('calendar-fixtures').fixtures;
   const sourceDatabase = embedded('prayer-data');
   const manifest = embedded('slides-data');
@@ -19,16 +23,21 @@
   const $ = id => document.getElementById(id);
   const pad = n => String(n).padStart(2,'0');
   const digits = (value, style) => style === 'arabic' ? String(value).replace(/[0-9]/g, d => '٠١٢٣٤٥٦٧٨٩'[Number(d)]) : String(value);
-  const dateKey = ms => new Date(ms + OFFSET).toISOString().slice(0,10);
-  const validDate = key => typeof key === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(key) && Number.isFinite(Date.parse(key+'T00:00:00+03:00')) && dateKey(Date.parse(key+'T00:00:00+03:00')) === key;
-  const addDays = (key,n) => dateKey(Date.parse(key+'T12:00:00+03:00') + n*DAY);
-  const weekday = key => new Date(Date.parse(key+'T12:00:00+03:00')+OFFSET).getUTCDay();
-  const timestamp = (key,time) => Date.parse(key+'T'+time+':00+03:00');
+  const dateKey = (ms,zone=ZONE) => activeProfile&&locationEngine?locationEngine.dateKey(ms,zone):new Date(ms + OFFSET).toISOString().slice(0,10);
+  const validDate = key => typeof key === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(key) && Number.isFinite(Date.parse(key+'T00:00:00Z')) && new Date(key+'T00:00:00Z').toISOString().slice(0,10)===key;
+  const addDays = (key,n) => new Date(Date.parse(key+'T12:00:00Z') + n*DAY).toISOString().slice(0,10);
+  const weekday = key => new Date(key+'T12:00:00Z').getUTCDay();
+  const timestamp = (key,time,zone=ZONE) => locationEngine&&(activeProfile||zone!=='Asia/Riyadh')?locationEngine.timestamp(key,time,zone):Date.parse(key+'T'+time+':00+03:00');
+  const english=()=>activeProfile?.language==='en';
+  const tr=(ar,en)=>english()?en:ar;
+  const prayerName=k=>english()?({fajr:'Fajr',sunrise:'Sunrise',dhuhr:'Dhuhr',asr:'Asr',maghrib:'Maghrib',isha:'Isha'})[k]:NAMES[k];
   function formatClock(ms, style) {
+    if(activeProfile&&locationEngine)return locationEngine.formatClock(ms,activeProfile,style);
     const d = new Date(ms+OFFSET), hour = d.getUTCHours();
     return {time:digits(pad(hour%12||12)+':'+pad(d.getUTCMinutes())+':'+pad(d.getUTCSeconds()),style),period:hour<12?'ص':'م'};
   }
   function formatTime(ms, style) {
+    if(activeProfile&&locationEngine)return locationEngine.formatTime(ms,activeProfile,style);
     const d = new Date(ms+OFFSET), h = d.getUTCHours();
     return digits(pad(h%12||12)+':'+pad(d.getUTCMinutes()),style)+' '+(h<12?'ص':'م');
   }
@@ -36,7 +45,7 @@
     if (!validDate(key) || key < calendar.rangeStart || key > calendar.rangeEnd) return null;
     const months=calendar.months;
     for(let i=months.length-2;i>=0;i--) {
-      if(key>=months[i].start && key<months[i+1].start) return {year:months[i].year,month:months[i].month,day:Math.round((timestamp(key,'12:00')-timestamp(months[i].start,'12:00'))/DAY)+1};
+      if(key>=months[i].start && key<months[i+1].start) return {year:months[i].year,month:months[i].month,day:Math.round((Date.parse(key+'T12:00:00Z')-Date.parse(months[i].start+'T12:00:00Z'))/DAY)+1};
     }
     return null;
   }
@@ -79,9 +88,10 @@
       out.iqama.overrides.push({id:textValue(o.id,60,'معرّف الموعد'),kind:o.kind,match:o.match,prayer:o.prayer,time:o.time,label:textValue(o.label||'',80,'وصف الموعد')});
     });
     out.prayerModeMinutes=number(c.prayerModeMinutes,1,60,'مدة وضع الصلاة',true);
+    out.adhanAdjustments={};KEYS.forEach(k=>out.adhanAdjustments[k]=number(c.adhanAdjustments?.[k]??0,-120,120,'تعديل وقت '+NAMES[k],true));
     out.slideSeconds=number(c.slideSeconds,5,300,'فاصل الشرائح',true);
     if(!['arabic','western'].includes(c.digitStyle))fail('نمط الأرقام غير مدعوم.');out.digitStyle=c.digitStyle;
-    out.location={latitude:number(c.location?.latitude,-60,60,'خط العرض'),longitude:number(c.location?.longitude,-180,180,'خط الطول')};
+    out.location={latitude:number(c.location?.latitude,activeProfile?-89:-60,activeProfile?89:60,'خط العرض'),longitude:number(c.location?.longitude,-180,180,'خط الطول')};
     // Existing version-1 backups predate this card; preserve their other settings.
     const donation=c.donation===undefined?defaults.donation:c.donation;
     if(!donation||typeof donation!=='object'||Array.isArray(donation))fail('بيانات بطاقة التبرع غير صالحة.');
@@ -92,16 +102,23 @@
   function validateTimetable(db) {
     if(!db||typeof db!=='object'||!db.metadata||!Array.isArray(db.records))fail('ملف المواقيت يجب أن يتضمن metadata وrecords.');
     const m=db.metadata, y=m.targetYear;
-    if(m.schemaVersion!==1||!Number.isInteger(y)||y<2000||y>2100||m.timezone!==ZONE||m.utcOffset!=='+03:00'||!['Dammam','الدمام'].includes(m.city)||!Array.isArray(m.displayYears)||m.displayYears.length!==2||m.displayYears[0]!==y||m.displayYears[1]!==y+1)fail('مدينة الجدول أو منطقته الزمنية أو سنواته أو إصداره غير صحيحة.');
+    const configured=Boolean(activeProfile&&locationEngine);
+    if(m.schemaVersion!==1||!Number.isInteger(y)||y<2000||y>2075||m.timezone!==ZONE||(!configured&&m.utcOffset!=='+03:00')||(configured&&!['iana-dynamic','+03:00'].includes(m.utcOffset))||(!configured&&!['Dammam','الدمام'].includes(m.city))||typeof m.city!=='string'||!m.city.trim()||!Array.isArray(m.displayYears)||m.displayYears.length!==2||m.displayYears[0]!==y||m.displayYears[1]!==y+1)fail('مدينة الجدول أو منطقته الزمنية أو سنواته أو إصداره غير صحيحة.');
     for(const k of ['source','dataVersion','generatedOn','verificationStatus'])textValue(m[k],2000,'بيانات المصدر: '+k);
     if(!['calculated-needs-review','authority-supplied-unverified'].includes(m.verificationStatus))fail('حالة التحقق غير مدعومة؛ يلزم الاحتفاظ ببيان مراجعة مستقل.');
     if(!m.source.trim()||!m.dataVersion.trim()||!validDate(m.generatedOn))fail('بيانات المصدر أو تاريخ التوليد ناقصة.');
     if(m.verificationStatus==='calculated-needs-review'){
       if(!m.coordinates||!m.calculation||typeof m.calculation!=='object'||Array.isArray(m.calculation))fail('إحداثيات المواقيت المحسوبة ومعاملاتها مطلوبة.');
-      number(m.coordinates.latitude,-60,60,'خط عرض الجدول');number(m.coordinates.longitude,-180,180,'خط طول الجدول');
+      number(m.coordinates.latitude,configured?-89:-60,configured?89:60,'خط عرض الجدول');number(m.coordinates.longitude,-180,180,'خط طول الجدول');
       const calc=m.calculation;
-      if(calc.fajrAngle!==18.5||calc.asrShadowFactor!==1||calc.ishaMinutesOutsideRamadan!==90||calc.ishaMinutesRamadan!==120)fail('معاملات المواقيت المحسوبة لا تطابق طريقة أم القرى الموثقة لهذه النسخة.');
-      for(const k of ['library','method','rounding','ramadanCalendar'])textValue(calc[k],500,'معامل الحساب '+k);
+      if(configured){
+        const preset=locationEngine.methodPresets[activeProfile.methodId];
+        if(!preset||calc.method!==activeProfile.methodId||Math.abs(m.coordinates.latitude-activeProfile.latitude)>0.00001||Math.abs(m.coordinates.longitude-activeProfile.longitude)>0.00001)fail('مصدر الجدول لا يطابق الموقع وطريقة الحساب المختارين.');
+        const remote=calc.library==='UmmahAPI (remote astronomical calculation)'&&m.sourceUrl==='https://ummahapi.com/api/docs';
+        if((remote?(calc.fajrAngle!==null||calc.ishaAngle!==null):(calc.fajrAngle!==preset.fajrAngle||calc.ishaAngle!==preset.ishaAngle))||calc.asrShadowFactor!==1||calc.ishaMinutesOutsideRamadan!==preset.ishaMinutesOutsideRamadan||calc.ishaMinutesRamadan!==preset.ishaMinutesRamadan)fail('معاملات الجدول لا تطابق طريقة الحساب المختارة.');
+        if((m.cityId&&m.cityId!==activeProfile.cityId)||(m.countryId&&m.countryId!==activeProfile.countryId))fail('الجدول لا يطابق المدينة والدولة المختارتين.');
+      }else if(calc.fajrAngle!==18.5||calc.asrShadowFactor!==1||calc.ishaMinutesOutsideRamadan!==90||calc.ishaMinutesRamadan!==120)fail('معاملات المواقيت المحسوبة لا تطابق طريقة أم القرى الموثقة لهذه النسخة.');
+      for(const k of configured?['library','method','rounding']:['library','method','rounding','ramadanCalendar'])textValue(calc[k],500,'معامل الحساب '+k);
     }
     const start=(y-1)+'-12-31', end=(y+2)+'-01-01';
     if(m.rangeStart!==start||m.rangeEnd!==end||m.displayStart!==y+'-01-01'||m.displayEnd!==(y+1)+'-12-31')fail('حدود التغطية لا تطابق سنوات العرض.');
@@ -110,8 +127,11 @@
     const index=new Map();
     for(const row of db.records){
       if(!row||!validDate(row.date)||row.date<start||row.date>end||index.has(row.date))fail('تاريخ مكرر أو غير صالح في جدول المواقيت.');
-      let previous=-1;
-      for(const k of KEYS){if(typeof row[k]!=='string'||!/^([01]\d|2[0-3]):[0-5]\d$/.test(row[k]))fail('وقت غير صالح في '+row.date+' / '+NAMES[k]);const minutes=Number(row[k].slice(0,2))*60+Number(row[k].slice(3));if(minutes<=previous)fail('ترتيب المواقيت غير صحيح في '+row.date);previous=minutes;}
+      if(configured&&m.verificationStatus==='calculated-needs-review'&&(!row.instants||typeof row.instants!=='object'||Array.isArray(row.instants)))fail('المواقيت المحسوبة يجب أن تتضمن التوقيت المطلق لكل صلاة.');
+      let previous=-Infinity;const anchor=row.instants?timestamp(row.date,'12:00',m.timezone):0;
+      for(const k of KEYS){if(typeof row[k]!=='string'||!/^([01]\d|2[0-3]):[0-5]\d$/.test(row[k]))fail('وقت غير صالح في '+row.date+' / '+NAMES[k]);const instant=row.instants?.[k],value=row.instants?instant:Number(row[k].slice(0,2))*60+Number(row[k].slice(3));if(row.instants){if(!configured||!Number.isSafeInteger(instant)||instant%60000!==0||Math.abs(instant-anchor)>36*3600000)fail('الوقت المطلق غير صالح في '+row.date);const wall=locationEngine.wallParts(instant,m.timezone);if(pad(wall.hour)+':'+pad(wall.minute)!==row[k])fail('الوقت المطلق لا يطابق المنطقة الزمنية في '+row.date);}if(value<=previous)fail('ترتيب المواقيت غير صحيح في '+row.date);previous=value;}
+      if(row.instants&&dateKey(row.instants.dhuhr,m.timezone)!==row.date)fail('تاريخ الظهر لا يطابق يوم الجدول.');
+      if(configured&&m.verificationStatus==='calculated-needs-review'&&activeProfile.methodId==='UmmAlQura'){const h=locationEngine.hijriFromCalendar(row.date,calendar),minutes=h?.month===9?120:90;if(!h||row.instants.isha-row.instants.maghrib!==minutes*60000)fail('فاصل العشاء لا يطابق قاعدة أم القرى ورمضان.');}
       index.set(row.date,clone(row));
     }
     let count=0;for(let key=start;key<=end;key=addDays(key,1)){if(!index.has(key))fail('تاريخ مفقود من جدول المواقيت: '+key);count++;}
@@ -125,14 +145,15 @@
       for(const p of PRAYERS){
         // The last guard day is needed only for its Fajr boundary; no invented following date.
         if(!following&&p!=='fajr')continue;
-        const adhan=timestamp(r.date,r[p]);
+        const eventAt=(row,key)=>(row.instants?.[key]??timestamp(row.date,row[key],db.metadata.timezone))+(c.adhanAdjustments?.[key]||0)*60000;
+        const adhan=eventAt(r,p);
         const candidates=c.iqama.overrides.filter(o=>o.prayer===p&&((o.kind==='date'&&o.match===r.date)||(o.kind==='weekday'&&Number(o.match)===weekday(r.date))));
         const fixed=candidates.find(o=>o.kind==='date')||candidates[0];
-        let iqama=fixed?timestamp(r.date,fixed.time):adhan+c.iqama.offsets[p]*60000;
-        if(fixed&&p==='isha'&&iqama<adhan)iqama+=DAY;
+        let iqama=fixed?timestamp(r.date,fixed.time,db.metadata.timezone):adhan+c.iqama.offsets[p]*60000;
+        if(fixed&&p==='isha'&&iqama<adhan)iqama=timestamp(addDays(r.date,1),fixed.time,db.metadata.timezone);
         const nextKey={fajr:'dhuhr',dhuhr:'asr',asr:'maghrib',maghrib:'isha'}[p];
-        const nextAdhan=p==='isha'?timestamp(following.date,following.fajr):timestamp(r.date,r[nextKey]);
-        const deadline=p==='fajr'?timestamp(r.date,r.sunrise):nextAdhan;
+        const nextAdhan=p==='isha'?eventAt(following,'fajr'):eventAt(r,nextKey);
+        const deadline=p==='fajr'?eventAt(r,'sunrise'):nextAdhan;
         const end=iqama+c.prayerModeMinutes*60000;
         if(iqama<adhan||iqama>=deadline||end>nextAdhan)fail('إعداد إقامة '+NAMES[p]+' في '+r.date+' خارج فترة الصلاة أو يتداخل مع الصلاة التالية. راجع الفاصل والموعد الثابت ومدة وضع الصلاة.');
         events.push({id:r.date+'/'+p,date:r.date,prayer:p,adhan,iqama,end,deadline});
@@ -165,9 +186,16 @@
   let storageNote='', savedSettings=clone(defaults), currentSettings, draft=null, database=null, events=[], databaseError='', nowProvider=()=>Date.now();
   let suppressedId=null, state=null, lastDate='', lastRenderSignature='', lastPhase='', settingsOpen=false;
   const STORE='mosque-display.settings.v1', TABLE_STORE='mosque-display.timetable.v1';
-  let storage;try{storage=window.localStorage;}catch(_){storageNote='التخزين المحلي غير متاح؛ صدّر الإعدادات للاحتفاظ بها بعد إغلاق الصفحة.';}
-  if(storage){const s=safeRead(storage,STORE);if(!s.ok)storageNote='تعذر قراءة التخزين المحلي؛ تعمل الإعدادات في هذه الجلسة.';else if(s.value){try{savedSettings=validateSettings(JSON.parse(s.value));}catch(_){storageNote='ملف الإعدادات المحفوظ غير صالح؛ استُخدمت الإعدادات الأصلية.';}}}
-  try{database=validateTimetable(sourceDatabase);if(storage){const stored=safeRead(storage,TABLE_STORE);if(stored.value){try{database=validateTimetable(JSON.parse(stored.value));}catch(_){storageNote+=' جدول المواقيت المحفوظ غير صالح؛ استُخدم الجدول المرفق.';}}}}catch(error){databaseError=error.message;}
+  let storage,legacySettingsPresent=false,nativeInstall={};try{storage=window.localStorage;}catch(_){storageNote='التخزين المحلي غير متاح؛ صدّر الإعدادات للاحتفاظ بها بعد إغلاق الصفحة.';}
+  try{if(typeof window.MosqueAndroid?.setupStatus==='function')nativeInstall=JSON.parse(String(window.MosqueAndroid.setupStatus()));else if(window.MosqueAndroid)nativeInstall={legacyUpgrade:true};}catch(_){nativeInstall={legacyUpgrade:true};}
+  if(storage){
+    const s=safeRead(storage,STORE);legacySettingsPresent=Boolean(s.value);
+    if(profileStore&&locationEngine){try{const candidate=profileStore.read(storage);if(candidate){activeProfile=locationEngine.validateProfile(candidate.profile,setupCatalog);ZONE=activeProfile.timezone;calendar=setupCalendar;savedSettings=validateSettings(candidate.settings);database=validateTimetable(candidate.timetable);installation=candidate;}}catch(error){installationError=String(error.message||error);databaseError=installationError;database=null;}}
+    if(!installation&&!installationError){if(!s.ok)storageNote='تعذر قراءة التخزين المحلي؛ تعمل الإعدادات في هذه الجلسة.';else if(s.value){try{savedSettings=validateSettings(JSON.parse(s.value));}catch(_){storageNote='ملف الإعدادات المحفوظ غير صالح؛ استُخدمت الإعدادات الأصلية.';}}}
+  }
+  if(!installation&&!installationError)try{database=validateTimetable(sourceDatabase);if(storage){const stored=safeRead(storage,TABLE_STORE);if(stored.value){try{database=validateTimetable(JSON.parse(stored.value));}catch(_){storageNote+=' جدول المواقيت المحفوظ غير صالح؛ استُخدم الجدول المرفق.';}}}}catch(error){databaseError=error.message;}
+  setupPending=Boolean(locationEngine&&profileStore&&(installationError||(!installation&&!legacySettingsPresent&&!nativeInstall.legacyUpgrade)));
+  if(setupPending){database=null;savedSettings=clone(defaults);savedSettings.donation.visible=false;savedSettings.mosque.enabled=false;}
   try{currentSettings=validateSettings(savedSettings);if(database)events=buildEvents(database,currentSettings);}catch(error){savedSettings=clone(defaults);currentSettings=clone(defaults);storageNote+=' تعارضت إعدادات الإقامة مع الجدول؛ استُخدمت الأمثلة الأصلية.';try{if(database)events=buildEvents(database,currentSettings);}catch(e){databaseError=e.message;database=null;}}
   function el(tag,className,text){const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=text;return node;}
   function renderMosque(){
@@ -189,12 +217,25 @@
   KEYS.forEach(k=>{const row=el('tr');row.dataset.prayer=k;const name=el('th',null,NAMES[k]);name.scope='row';const adhan=el('td','time-cell','—'),iqama=el('td','time-cell','—');adhan.dir='ltr';iqama.dir='ltr';row.append(name,adhan,iqama);$('prayerRows').append(row);rows.set(k,{row,adhan,iqama});});
   function renderPrayerTable(ms){
     const key=dateKey(ms), r=database?.index.get(key), supported=database?.metadata.displayYears.includes(Number(key.slice(0,4)));
-    KEYS.forEach(k=>{const ui=rows.get(k);ui.adhan.textContent=supported&&r?formatTime(timestamp(key,r[k]),currentSettings.digitStyle):'—';const event=events.find(e=>e.date===key&&e.prayer===k);ui.iqama.textContent=supported&&event&&k!=='sunrise'?formatTime(event.iqama,currentSettings.digitStyle):'—';ui.row.classList.toggle('informational',k==='sunrise');});
+    KEYS.forEach(k=>{const ui=rows.get(k);ui.adhan.textContent=supported&&r?formatTime((r.instants?.[k]??timestamp(key,r[k]))+(currentSettings.adhanAdjustments?.[k]||0)*60000,currentSettings.digitStyle):'—';const event=events.find(e=>e.date===key&&e.prayer===k);ui.iqama.textContent=supported&&event&&k!=='sunrise'?formatTime(event.iqama,currentSettings.digitStyle):'—';ui.row.classList.toggle('informational',k==='sunrise');});
     const unavailable=!database||!supported||!r;
     $('displayStatus').hidden=!unavailable;
-    $('dataStatus').textContent=unavailable?'بيانات المواقيت غير متوفرة لهذا التاريخ — حدّث الجدول من الإعدادات':'';
+    $('dataStatus').textContent=unavailable?tr('بيانات المواقيت غير متوفرة لهذا التاريخ — حدّث الجدول من الإعدادات','Prayer times unavailable for this date — update the timetable in settings'):'';
   }
   function renderDates(ms){
+    if(activeProfile&&locationEngine){
+      const key=dateKey(ms),parts=locationEngine.wallParts(ms,ZONE),h=hijri(key),en=english();
+      $('weekday').textContent=new Intl.DateTimeFormat(en?'en-US':'ar-SA',{timeZone:ZONE,weekday:'long',calendar:'gregory'}).format(new Date(ms));
+      $('gregorianDate').textContent=digits(new Intl.DateTimeFormat(en?'en-GB':'ar-SA-u-nu-latn',{timeZone:ZONE,calendar:'gregory',day:'numeric',month:'long',year:'numeric'}).format(new Date(ms)),currentSettings.digitStyle);
+      $('gregorianDate').dir=en?'ltr':'rtl';$('hijriDate').dir=en?'ltr':'rtl';$('weekday').dir=en?'ltr':'rtl';
+      const names=en?['Muharram','Safar','Rabi I','Rabi II','Jumada I','Jumada II','Rajab','Shaban','Ramadan','Shawwal','Dhul Qadah','Dhul Hijjah']:HIJRI_MONTHS;
+      $('hijriDate').textContent=h?digits(h.day+' '+names[h.month-1]+' '+h.year+(en?' AH':' هـ'),currentSettings.digitStyle):tr('التقويم الهجري خارج نطاق التغطية','Hijri calendar coverage needs updating');
+      $('hijriDate').hidden=activeProfile.dateStyle==='gregorian';$('gregorianDate').hidden=activeProfile.dateStyle==='hijri';
+      document.querySelectorAll('.dates .date-divider').forEach((node,index)=>node.hidden=index===1&&activeProfile.dateStyle!=='both');
+      const country=setupCatalog.countries.find(c=>c.id===activeProfile.countryId),city=country?.cities.find(c=>c.id===activeProfile.cityId),line=document.querySelector('.city-line');
+      if(line)line.textContent=(en?city?.nameEn:city?.nameAr||city?.nameEn)+' · '+ZONE;
+      return;
+    }
     const key=dateKey(ms), d=new Date(ms+OFFSET), h=hijri(key);
     $('weekday').textContent=WEEKDAYS[d.getUTCDay()];
     const gm=['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -305,11 +346,11 @@
     if(signature!==lastRenderSignature){
       lastRenderSignature=signature;
       rows.forEach((ui,k)=>ui.row.classList.toggle('next-prayer',k===state.highlight));
-      if(state.phase==='UNAVAILABLE')$('countdownLabel').textContent='بيانات المواقيت غير متوفرة لهذا التاريخ';
-      else if(state.phase==='WAITING_FOR_IQAMA')$('countdownLabel').textContent='المتبقي على إقامة '+NAMES[state.active.prayer];
-      else if(state.phase==='PRAYER_MODE')$('countdownLabel').textContent='تُقام الصلاة الآن';
-      else $('countdownLabel').textContent=state.next?'المتبقي على أذان '+NAMES[state.next.prayer]:'حدّث جدول المواقيت';
-      $('nextDateLabel').textContent=state.next&&state.next.date!==key?'موعد اليوم التالي':'';
+      if(state.phase==='UNAVAILABLE')$('countdownLabel').textContent=tr('بيانات المواقيت غير متوفرة لهذا التاريخ','Prayer times are unavailable for this date');
+      else if(state.phase==='WAITING_FOR_IQAMA')$('countdownLabel').textContent=tr('المتبقي على إقامة ','Until iqama: ')+prayerName(state.active.prayer);
+      else if(state.phase==='PRAYER_MODE')$('countdownLabel').textContent=tr('تُقام الصلاة الآن','Prayer is in progress');
+      else $('countdownLabel').textContent=state.next?tr('المتبقي على أذان ','Until adhan: ')+prayerName(state.next.prayer):tr('حدّث جدول المواقيت','Update the prayer timetable');
+      $('nextDateLabel').textContent=state.next&&state.next.date!==key?tr('موعد اليوم التالي','Next day'):'';
     }
     const remaining=state.targetAt?Math.max(0,Math.ceil((state.targetAt-ms)/1000)):null;
     $('countdownValue').textContent=remaining===null?'— — : — — : — —':digits(pad(Math.floor(remaining/3600))+':'+pad(Math.floor(remaining/60)%60)+':'+pad(remaining%60),currentSettings.digitStyle);
@@ -329,8 +370,36 @@
       info.style.fontSize=(23*scale)+'px';if(name)name.style.fontSize=(43*scale)+'px';
     }
   }
-  function refresh(){lastDate='';lastRenderSignature='';contentMode='';renderMosque();tick();}
+  function refresh(){lastDate='';lastRenderSignature='';contentMode='';if(window.MosqueLocale)window.MosqueLocale.set(activeProfile?.language||'ar');rows.forEach((ui,k)=>ui.row.querySelector('th').textContent=prayerName(k));renderMosque();tick();}
   function useSettings(candidate){const validated=validateSettings(candidate);const next=database?buildEvents(database,validated):[];currentSettings=validated;events=next;refresh();}
+  function plainTimetable(db){return {metadata:clone(db.metadata),records:clone(db.records)};}
+  function withProfile(profile,action){const before={profile:activeProfile,zone:ZONE,calendar};try{activeProfile=locationEngine.validateProfile(profile,setupCatalog);ZONE=activeProfile.timezone;calendar=setupCalendar;return action(activeProfile);}finally{activeProfile=before.profile;ZONE=before.zone;calendar=before.calendar;}}
+  function setupSettings(profile){
+    const candidate=clone(savedSettings);
+    if(setupPending&&!installation){for(const k of Object.keys(candidate.mosque.fields)){candidate.mosque.fields[k].value='';candidate.mosque.fields[k].visible=false;}candidate.mosque.custom=[];candidate.donation.visible=false;candidate.iqama={offsets:{fajr:10,dhuhr:10,asr:10,maghrib:5,isha:10},confirmed:false,overrides:[]};candidate.prayerModeMinutes=10;}
+    const country=setupCatalog.countries.find(c=>c.id===profile.countryId),city=country.cities.find(c=>c.id===profile.cityId);
+    candidate.mosque.enabled=true;candidate.mosque.fields.name={value:profile.mosqueName,visible:true};candidate.mosque.fields.address={value:[profile.neighborhood,profile.language==='en'?city.nameEn:city.nameAr||city.nameEn].filter(Boolean).join('، '),visible:true};candidate.location={latitude:profile.latitude,longitude:profile.longitude};
+    return validateSettings(candidate);
+  }
+  function validateSetup(profile,table){return withProfile(profile,p=>{const data=validateTimetable(table),settings=setupSettings(p),nextEvents=buildEvents(data,settings);return {profile:clone(p),settings,data,events:nextEvents};});}
+  function persistCurrent(settings,table){
+    if(!storage)return {ok:false};
+    if(installation){try{const profile=clone(activeProfile);if(settings.mosque.fields.name.value.trim())profile.mosqueName=settings.mosque.fields.name.value;const snapshot={...installation,profile,settings:clone(settings),timetable:plainTimetable(table)};profileStore.commit(storage,snapshot);installation=snapshot;activeProfile=profile;safeWrite(storage,STORE,JSON.stringify(settings));safeWrite(storage,TABLE_STORE,JSON.stringify(snapshot.timetable));return {ok:true};}catch(error){return {ok:false,error:String(error.message||error)};}}
+    return safeWrite(storage,STORE,JSON.stringify(settings));
+  }
+  if(locationEngine&&profileStore)window.MosqueInstall={
+    getContext:()=>({profile:activeProfile&&clone(activeProfile),settings:clone(savedSettings),required:setupPending,hasInstallation:Boolean(installation),error:installationError,calendar:setupCalendar,catalog:setupCatalog,year:Number((activeProfile?locationEngine.dateKey(nowProvider(),activeProfile.timezone):dateKey(nowProvider())).slice(0,4))}),
+    validatePrepared:(profile,table)=>{validateSetup(profile,table);return true;},
+    commit:(profile,table)=>{
+      if(state?.phase==='PRAYER_MODE')throw Error(tr('انتظر انتهاء الصلاة لحفظ الإعداد.','Wait until prayer ends before saving setup.'));
+      if(!storage)throw Error('Local storage is unavailable. Setup was not saved.');
+      const checked=validateSetup(profile,table),snapshot={schemaVersion:1,profile:checked.profile,settings:checked.settings,timetable:plainTimetable(checked.data),completedAt:new Date(nowProvider()).toISOString()};
+      profileStore.commit(storage,snapshot);
+      activeProfile=checked.profile;ZONE=activeProfile.timezone;calendar=setupCalendar;installation=snapshot;installationError='';setupPending=false;savedSettings=clone(checked.settings);currentSettings=clone(checked.settings);database=checked.data;events=checked.events;databaseError='';storageNote='';suppressedId=null;
+      safeWrite(storage,STORE,JSON.stringify(savedSettings));safeWrite(storage,TABLE_STORE,JSON.stringify(snapshot.timetable));
+      try{window.MosqueAndroid?.markSetupCompleted?.(activeProfile.language);window.MosqueAndroid?.setProfileTimezone?.(activeProfile.timezone);}catch(_){}refresh();return {ok:true};
+    }
+  };
   let lastInteraction=Date.now();
   function interaction(){if(state?.phase==='PRAYER_MODE')return;lastInteraction=nowProvider();document.body.classList.remove('idle');}
   function resize(){const scale=Math.min(innerWidth/1920,innerHeight/1080);$('stage').style.transform='scale('+scale+')';$('stage').style.left=((innerWidth-1920*scale)/2)+'px';$('stage').style.top=((innerHeight-1080*scale)/2)+'px';fitInformation();fitSlideText();fitDonationText();sizeTicker();}
@@ -348,19 +417,21 @@
     s.append(button('إضافة حقل نصي',()=>{if(draft.mosque.custom.length>=8)return message('الحد الأقصى ثمانية حقول.',true);draft.mosque.custom.push({id:'field-'+Date.now(),label:'',value:'',visible:true});drawSettings();}));
     s=section('الإقامة ووضع الصلاة');s.append(el('p','notice','الفواصل التالية أمثلة أولية تحتاج تأكيد إدارة الجامع. مواقيت الإقامة إعدادات محلية وليست نتائج فلكية.'));
     const intervals=el('div','inline');PRAYERS.forEach(p=>intervals.append(input(NAMES[p]+' (دقيقة)',draft.iqama.offsets[p],'number',v=>draft.iqama.offsets[p]=v,{min:1,max:180,step:1})));s.append(intervals,input('تمت مراجعة إعدادات الإقامة مع إدارة الجامع',draft.iqama.confirmed,'checkbox',v=>draft.iqama.confirmed=v),input('مدة وضع الصلاة (دقيقة)',draft.prayerModeMinutes,'number',v=>draft.prayerModeMinutes=v,{min:1,max:60,step:1}));
-    s.append(el('p','notice','يمكن تحديد إقامة ثابتة ليوم أسبوعي، بما فيه الجمعة، أو لتاريخ بعينه. يتقدم موعد التاريخ على الموعد الأسبوعي. لا يوجد موعد جمعة مفترض. وقت الإقامة هنا بنظام 24 ساعة وتوقيت الرياض؛ للعشاء فقط يمكن أن يمتد إلى اليوم التالي.'));
+    s.append(el('p','notice',tr('يمكن تحديد إقامة ثابتة ليوم أسبوعي أو تاريخ بعينه. يتقدم التاريخ على الموعد الأسبوعي. لا يوجد موعد جمعة مفترض. تُستخدم المنطقة الزمنية المختارة وصيغة 24 ساعة؛ للعشاء فقط يمكن الامتداد إلى اليوم التالي.','Set a fixed iqama for a weekday or date. A date override takes priority. No Friday time is assumed. Times use the selected zone and 24-hour format; only Isha may extend into the next day.')));
     draft.iqama.overrides.forEach((o,i)=>{const row=el('div','override-row');row.dataset.tvGroup=o.id;row.dataset.tvLabel='موعد الإقامة '+(i+1);row.append(select('الصلاة',o.prayer,PRAYERS.map(k=>[k,NAMES[k]]),v=>o.prayer=v),select('التكرار',o.kind,[['weekday','يوم في الأسبوع'],['date','تاريخ محدد']],v=>{o.kind=v;o.match=v==='weekday'?'5':dateKey(nowProvider());drawSettings();}));if(o.kind==='weekday')row.append(select('اليوم',o.match,WEEKDAYS.map((n,j)=>[String(j),n]),v=>o.match=v));else row.append(input('التاريخ',o.match,'date',v=>o.match=v));row.append(input('الإقامة 24 ساعة',o.time,'time',v=>o.time=v),input('وصف مثل ترتيب الجمعة',o.label,'text',v=>o.label=v,{maxLength:80}),button('حذف',()=>{draft.iqama.overrides.splice(i,1);drawSettings();}));s.append(row);});
     s.append(button('إضافة موعد إقامة ثابت',()=>{if(draft.iqama.overrides.length>=80)return message('الحد الأقصى ثمانون موعدًا.',true);draft.iqama.overrides.push({id:'override-'+Date.now(),kind:'weekday',match:'5',prayer:'dhuhr',time:'',label:''});drawSettings();}));
     s=section('العرض والأرقام');s.append(input('فاصل الشرائح (ثانية)',draft.slideSeconds,'number',v=>draft.slideSeconds=v,{min:5,max:300,step:1}),select('نمط الأرقام',draft.digitStyle,[['western','0123456789 — أرقام غربية'],['arabic','٠١٢٣٤٥٦٧٨٩ — أرقام عربية']],v=>draft.digitStyle=v));
     s=section('بطاقة التبرع');
     s.append(input('إظهار بطاقة التبرع',draft.donation.visible,'checkbox',v=>draft.donation.visible=v),input('عنوان مشروع التبرع',draft.donation.title,'text',v=>draft.donation.title=v,{maxLength:90}),input('وصف مختصر للمشروع',draft.donation.description,'text',v=>draft.donation.description=v,{maxLength:180}),el('p','notice','تظهر البطاقة ثابتة بجوار الأذكار، وتختفي أثناء وضع الصلاة. إخفاؤها يحفظ النصوص. رمز التبرع هو الصورة المحلية المرفقة؛ تعديل النص لا يغير وجهة الرمز.'));
     s=section('المواقيت والتقويم');
-    s.append(el('p','notice',database?'المصدر: '+(database.metadata.verificationStatus==='calculated-needs-review'?'حساب محلي بمكتبة Adhan JS 4.4.3؛ ليس جدولًا رسميًا.':database.metadata.source)+' | السنوات: '+database.metadata.displayYears.join('، ')+' | الحالة: '+(database.metadata.verificationStatus==='calculated-needs-review'?'مواقيت محسوبة — تحتاج مراجعة':'جدول مستورد — يحتاج مراجعة مصدره'):'تعذر تحميل المواقيت: '+databaseError));
+    s.append(button(tr('إعداد الموقع واللغة والتقويم','Set up location, language and calendar'),()=>{closeSettings(true);if(window.MosqueControl?.isOpen())window.MosqueControl.close({restoreFocus:false});window.MosqueSetup?.open({required:setupPending});}));
+    KEYS.forEach(k=>s.append(input(tr('تعديل وقت '+NAMES[k]+' (دقيقة)','Adjust '+prayerName(k)+' (minutes)'),draft.adhanAdjustments?.[k]||0,'number',v=>{draft.adhanAdjustments=draft.adhanAdjustments||{};draft.adhanAdjustments[k]=v;},{min:-120,max:120,step:1})));
+    s.append(el('p','notice',database?tr('المصدر: ','Source: ')+database.metadata.source+tr(' | السنوات: ',' | Years: ')+database.metadata.displayYears.join(', ')+tr(' | الحالة: ',' | Status: ')+(database.metadata.verificationStatus==='calculated-needs-review'?tr('مواقيت محسوبة — تحتاج مراجعة','Calculated times — local review required'):tr('جدول مستورد — يحتاج مراجعة مصدره','Imported timetable — review its provenance')):tr('تعذر تحميل المواقيت: ','Could not load prayer times: ')+databaseError));
     s.append(input('خط العرض للمراجعة وإعادة التوليد',draft.location.latitude,'number',v=>draft.location.latitude=v,{step:'0.0001'}),input('خط الطول للمراجعة وإعادة التوليد',draft.location.longitude,'number',v=>draft.location.longitude=v,{step:'0.0001'}),el('p','notice','تغيير الإحداثيات لا يعيد حساب الجدول داخل المتصفح. أعد توليده بأداة التطوير ثم استورد الملف الناتج؛ يظل مصدر الجدول وإحداثياته الأصلية محفوظين.'));
     s.append(button('استيراد جدول مواقيت JSON',()=>$('timetableFile').click()),button('تصدير جدول المواقيت',exportTimetable));
     const daysLeft=database?Math.floor((timestamp(database.metadata.displayYears[1]+'-12-31','23:59')-nowProvider())/DAY):0;
     if(daysLeft<90)s.append(el('p','error',daysLeft<0?'انتهت تغطية المواقيت؛ استورد جدولًا جديدًا.':'تنتهي تغطية المواقيت خلال '+daysLeft+' يومًا؛ جهّز جدول السنة الجديدة.'));
-    s.append(el('p','notice','تقويم أم القرى مدني ويتغير عند منتصف الليل بتوقيت السعودية. التغطية المحلية: '+calendar.rangeStart+' إلى '+calendar.rangeEnd+'. '+(calendarNativeOK?'دعم المتصفح اجتاز المراجع؛ يطابق كل تاريخ الجدول المحلي.':'يُستخدم جدول أم القرى المحلي الموثق.')));
+    s.append(el('p','notice',tr('تقويم أم القرى مدني ويتغير عند منتصف الليل. المنطقة الزمنية: ','Umm al-Qura civil dates change at midnight. Time zone: ')+ZONE+tr('. التغطية المحلية: ','. Local coverage: ')+calendar.rangeStart+' — '+calendar.rangeEnd));
     s=section('الحفظ والتشغيل');s.append(el('p','notice',storageNote||'التخزين المحلي متاح لهذه الجلسة. يُنصح بتصدير نسخة احتياطية.'));
     s.append(el('p','notice','قد يختلف حفظ الإعدادات تحت file:// باختلاف المتصفح. نقل الملف أو تغيير اسمه قد يغيّر مساحة التخزين. ملف JSON المصدّر هو النسخة الاحتياطية القابلة للنقل. لا يُكتب ملف index.html من المتصفح.'));
     s.append(el('p','notice','الإعدادات: Ctrl + , أو زر الإعدادات. ملء الشاشة من الزر أو F11 في المتصفحات الداعمة. للخروج الاضطراري من السواد: Ctrl + Alt + M؛ يخص التجاوز فترة الصلاة الحالية فقط. اضبط ساعة الجهاز وأوقف السكون وشاشة التوقف من إعدادات النظام. لا يستطيع التطبيق غير المتصل مزامنة الساعة.'));
@@ -412,7 +483,7 @@
     const list=el('div','tv-settings-rows');list.id='tvSettingsRows';
     current.rows.forEach(row=>{
       const b=button('',()=>{tvLastFocus=b.id;if(row.kind==='action'){try{row.action();if(settingsOpen&&!tvEditor)drawSettings();}catch(error){message(error.message,true);}}else if(row.kind!=='info')tvOpenEditor(row);});
-      b.id='tv-row-'+row.id;b.className='tv-setting-row';b.dataset.tvZone='rows';b.disabled=Boolean(row.disabled)||row.kind==='info';
+      b.id='tv-row-'+row.id;b.className='tv-setting-row';b.dataset.tvZone='rows';b.dataset.tvKind=row.kind;b.disabled=Boolean(row.disabled)||row.kind==='info';
       const copy=el('span','tv-row-copy');copy.append(el('span','tv-row-label',row.label));if(row.help)copy.append(el('span','tv-row-help',row.help));b.append(copy,el('span','tv-row-value',tvSummary(row)));list.append(b);
     });
     pane.append(list);hub.append(tvPane==='menu'?menu:pane);$('settingsBody').replaceChildren(hub);list.scrollTop=tvScroll[tvSectionId]||0;
@@ -521,27 +592,26 @@
   // TV_SETTINGS_UI_END
   function openSettings(section,fromControl){if(state?.phase==='PRAYER_MODE')return;if(settingsOpen)return;tvControlOrigin=Boolean(fromControl);if(typeof section==='string')tvSectionId=section;draft=clone(savedSettings);settingsOpen=true;tvPane=fromControl&&section!=='mosque'?'rows':'menu';$('settingsDialog').classList.remove('previewing');$('previewButton').textContent='معاينة';drawSettings();message('التغييرات مسودة؛ احفظها للاعتماد أو ارجع لإلغائها.');$('settingsDialog').showModal();if(tvMode)tvFocus(tvPane==='menu'?'tv-section-'+tvSectionId:$('tvSettingsRows')?.querySelector('button:not([disabled])')?.id||'tvSettingsBack');interaction();}
   function closeSettings(cancel){tvEditor=null;$('tvEditor')?.remove();settingsOpen=false;draft=null;$('settingsDialog').close();$('settingsDialog').classList.remove('previewing');$('previewButton').textContent='معاينة';if(window.MosqueTVNative?.onClose)window.MosqueTVNative.onClose();if(cancel){try{useSettings(savedSettings);}catch(error){message(error.message,true);}}if(tvMode&&state?.phase!=='PRAYER_MODE'){if(tvControlOrigin&&window.MosqueControl)window.MosqueControl.open();else tvFocus('settingsButton');}tvControlOrigin=false;interaction();}
-  function launchControls(){if(tvMode&&window.MosqueControl){if(settingsOpen){closeSettings(true);return;}if(window.MosqueControl.isOpen())window.MosqueControl.close();else window.MosqueControl.open();}else openSettings();}
+  function launchControls(){if(window.MosqueSetup?.isOpen())return;if(setupPending&&window.MosqueSetup){window.MosqueSetup.open({required:true});return;}if(tvMode&&window.MosqueControl){if(settingsOpen){closeSettings(true);return;}if(window.MosqueControl.isOpen())window.MosqueControl.close();else window.MosqueControl.open();}else openSettings();}
   function download(name,value){const blob=new Blob([JSON.stringify(value,null,2)],{type:'application/json;charset=utf-8'}),url=URL.createObjectURL(blob),a=el('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-  function exportTimetable(){if(database)download('dammam-prayer-timetable.json',{metadata:database.metadata,records:database.records});}
+  function exportTimetable(){if(database)download('mosque-prayer-timetable.json',{metadata:database.metadata,records:database.records});}
   function readFile(file,onload){if(!file)return;if(file.size>3000000)return message('الملف أكبر من الحد المسموح (3 ميغابايت).',true);const reader=new FileReader();reader.onload=()=>{try{onload(JSON.parse(reader.result));}catch(error){message('لم يُطبّق الملف: '+error.message,true);}};reader.onerror=()=>message('تعذرت قراءة الملف المحلي.',true);reader.readAsText(file,'UTF-8');}
   $('settingsButton').addEventListener('click',launchControls);
   $('previewButton').addEventListener('click',()=>{try{if(tvMode&&$('settingsDialog').classList.contains('previewing')){$('settingsDialog').classList.remove('previewing');$('previewButton').textContent='معاينة';drawSettings();tvFocus('tv-section-'+tvSectionId);return;}useSettings(draft);message('المعاينة مطبّقة مؤقتًا. احفظ للاعتماد أو ألغِ للرجوع.');$('settingsDialog').classList.add('previewing');if(tvMode){$('previewButton').textContent='العودة للإعدادات';tvFocus('previewButton');}}catch(error){message(error.message,true);}});
   $('saveButton').addEventListener('click',()=>{try{
     // Commit the validated draft before rendering: saving may itself enter prayer mode.
     const candidate=validateSettings(draft);if(database)buildEvents(database,candidate);
+    const result=persistCurrent(candidate,database);if(!result.ok)throw Error(tr('تعذر الحفظ محليًا؛ لم تُعتمد المسودة. صدّر نسخة احتياطية وحاول مجددًا.','Could not save locally. The draft remains unsaved; export a backup and try again.'));
     savedSettings=clone(candidate);closeSettings(false);useSettings(candidate);
-    const result=storage?safeWrite(storage,STORE,JSON.stringify(savedSettings)):{ok:false};
-    if(!result.ok){storageNote='تعذر حفظ الإعدادات محليًا؛ تعمل مؤقتًا. صدّر نسخة JSON قبل إغلاق الصفحة.';openSettings();}
   }catch(error){message(error.message,true);}});
   $('cancelButton').addEventListener('click',()=>closeSettings(true));
   $('settingsDialog').addEventListener('cancel',e=>{e.preventDefault();if(tvMode)tvHandleBack();else closeSettings(true);});
   $('settingsForm').addEventListener('submit',e=>e.preventDefault());
-  $('defaultsButton').addEventListener('click',()=>{if(window.confirm('استعادة الإعدادات الأصلية في المسودة؟ لن تُحفظ إلا بعد اختيار حفظ.')){draft=clone(defaults);drawSettings();message('استُعيدت القيم الأصلية في المسودة.');}});
+  $('defaultsButton').addEventListener('click',()=>{if(window.confirm(tr('استعادة الإعدادات الأصلية في المسودة؟ لن تُحفظ إلا بعد اختيار حفظ.','Reset the draft? Changes will apply only after saving.'))){draft=clone(defaults);if(activeProfile){draft.mosque.fields.name=clone(savedSettings.mosque.fields.name);draft.mosque.fields.address=clone(savedSettings.mosque.fields.address);draft.location={latitude:activeProfile.latitude,longitude:activeProfile.longitude};draft.donation.visible=false;}drawSettings();message(tr('استُعيدت القيم الأصلية في المسودة.','Default values restored in the draft.'));}});
   $('exportSettingsButton').addEventListener('click',()=>{try{download('mosque-settings.json',validateSettings(draft));message('صُدّرت المسودة الحالية. لم تتغير الإعدادات المحفوظة.');}catch(error){message(error.message,true);}});
   $('importSettingsButton').addEventListener('click',()=>$('settingsFile').click());
   $('settingsFile').addEventListener('change',e=>{readFile(e.target.files[0],value=>{const candidate=validateSettings(value);if(database)buildEvents(database,candidate);draft=candidate;drawSettings();message('استُوردت الإعدادات في المسودة. عاينها ثم احفظها.');});e.target.value='';});
-  $('timetableFile').addEventListener('change',e=>{readFile(e.target.files[0],value=>{const next=validateTimetable(value),nextEvents=buildEvents(next,currentSettings);buildEvents(next,savedSettings);database=next;events=nextEvents;const result=storage?safeWrite(storage,TABLE_STORE,JSON.stringify(value)):{ok:false};if(!result.ok)storageNote='جدول المواقيت المستورد متاح لهذه الجلسة فقط؛ احتفظ بملفه وأعد استيراده بعد التشغيل.';refresh();if(settingsOpen){drawSettings();message('تم التحقق من الجدول واستيراده. '+(result.ok?'حُفظ محليًا.':'تعذر حفظه محليًا؛ احتفظ بالملف.'),!result.ok);}});e.target.value='';});
+  $('timetableFile').addEventListener('change',e=>{readFile(e.target.files[0],value=>{const next=validateTimetable(value),nextEvents=buildEvents(next,currentSettings);buildEvents(next,savedSettings);let result;if(installation){result=persistCurrent(savedSettings,next);if(!result.ok)fail('Could not save the imported timetable; the previous table is retained.');}else result=storage?safeWrite(storage,TABLE_STORE,JSON.stringify(value)):{ok:false};database=next;events=nextEvents;if(!result.ok)storageNote='جدول المواقيت المستورد متاح لهذه الجلسة فقط؛ احتفظ بملفه وأعد استيراده بعد التشغيل.';refresh();if(settingsOpen){drawSettings();message('تم التحقق من الجدول واستيراده. '+(result.ok?'حُفظ محليًا.':'تعذر حفظه محليًا؛ احتفظ بالملف.'),!result.ok);}});e.target.value='';});
   if($('importTimetableButton'))$('importTimetableButton').addEventListener('click',()=>$('timetableFile').click());
   if($('exportTimetableButton'))$('exportTimetableButton').addEventListener('click',exportTimetable);
   $('fullscreenButton').addEventListener('click',async()=>{const ok=await attemptFullscreen(document.documentElement);if(!ok){openSettings();message('تعذر ملء الشاشة. جرّب F11 على Windows أو اختصار ملء الشاشة الخاص بالمتصفح.',true);}});

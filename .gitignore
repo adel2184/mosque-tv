@@ -12,3 +12,5 @@ qa/*-report.json
 qa/*.png
 qa/*.jpg
 /qa/as/
+/assets/data/location-catalog.js
+/data/location-catalog.json

@@ -31,11 +31,27 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node dev/test-content.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node dev/test-location-engine.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node dev/test-profile-store.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node dev/test-setup-wizard.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node dev/test-profile-integration.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node dev/test-profile-adapter.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node dev/test-locale.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node dev/test-setup-provider.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node android/test-bridge.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node android/test-tv-settings.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $env:MOSQUE_JAVA_HOME = $env:JAVA_HOME
+          node android/test-setup-fetch.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node android/test-update.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node android/test-release.cjs

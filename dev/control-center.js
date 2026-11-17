@@ -26,6 +26,8 @@
   const ROW_IDS=new Set(CATALOG.map(row=>row.id));
   const FOCUS_IDS=new Set(QUICK.map(row=>'cc-quick-'+row.id).concat(CATALOG.map(row=>'cc-row-'+row.id),['cc-customize']));
   const clone=value=>JSON.parse(JSON.stringify(value));
+  const tx=value=>window.MosqueLocale&&typeof window.MosqueLocale.t==='function'?window.MosqueLocale.t(value):value;
+  function localizePanel(){if(window.MosqueLocale&&typeof window.MosqueLocale.translateUI==='function')window.MosqueLocale.translateUI(panel);}
   const defaults=()=>({schemaVersion:1,rows:DEFAULT_ROWS.slice(),lastId:'cc-row-network'});
   let storageNote='',config=defaults(),nativeStatus={},opened=false,view='main',customRows=null,returnFocus=null,closeTimer=0;
   let overlay=null,panel=null,content=null,messageNode=null,footer=null;
@@ -38,19 +40,19 @@
   function persist(){try{window.localStorage.setItem(STORAGE_KEY,JSON.stringify(config));return true;}catch(_){storageNote='خيارات المركز تعمل لهذه الجلسة فقط؛ تعذر حفظها محليًا.';return false;}}
   function prayerActive(){return Boolean(document.body&&document.body.classList.contains('praying'));}
   function element(tag,className,text){const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=String(text);return node;}
-  function statusMessage(text){if(messageNode){messageNode.textContent=text||storageNote;messageNode.hidden=!messageNode.textContent;const active=document.activeElement;if(opened&&panel&&panel.contains(active)&&active.scrollIntoView)active.scrollIntoView({block:'nearest',inline:'nearest'});}}
+  function statusMessage(text){if(messageNode){messageNode.textContent=tx(text||storageNote);messageNode.hidden=!messageNode.textContent;const active=document.activeElement;if(opened&&panel&&panel.contains(active)&&active.scrollIntoView)active.scrollIntoView({block:'nearest',inline:'nearest'});}}
   function readNative(){
     try{const api=window.MosqueTVNative;if(!api||typeof api.controlStatus!=='function')return{};let value=api.controlStatus();if(typeof value==='string')value=JSON.parse(value);return value&&typeof value==='object'&&!Array.isArray(value)?value:{};}
     catch(_){return{message:'تعذر قراءة حالة بعض خيارات التلفاز.'};}
   }
   function available(id){return !(nativeStatus.available&&nativeStatus.available[id]===false);}
   function summary(row){
-    if(row.id==='speed'&&!available('speed'))return'يحتاج الإنترنت';
+    if(row.id==='speed'&&!available('speed'))return tx('يحتاج الإنترنت');
     const value=nativeStatus.rows&&nativeStatus.rows[row.id]!==undefined?nativeStatus.rows[row.id]:nativeStatus[row.id];
-    if(typeof value==='string')return value.slice(0,140);
-    if(typeof value==='boolean')return value?'مفعّل':'متوقف';
-    if(value&&typeof value==='object'){const text=value.message||value.summary||value.name;if(typeof text==='string')return text.slice(0,140);}
-    return available(row.id)?row.fallback||'': 'غير متاح في هذا التلفاز';
+    if(typeof value==='string')return(row.id==='network'?value:tx(value)).slice(0,140);
+    if(typeof value==='boolean')return tx(value?'مفعّل':'متوقف');
+    if(value&&typeof value==='object'){const text=value.message||value.summary||value.name;if(typeof text==='string')return(value.name&&!value.message&&!value.summary?text:tx(text)).slice(0,140);}
+    return tx(available(row.id)?row.fallback||'': 'غير متاح في هذا التلفاز');
   }
   const PATHS={
     bluetooth:'M10 3l8 7-6 4 6 4-8 7V3M5 8l12 12M5 20L17 8',
@@ -70,7 +72,7 @@
     deviceSetup:'M17 4a6 6 0 00-7 7L3 22l3 3 11-11a6 6 0 007-7l-4 4-4-4 3-3'
   };
   function icon(id){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 28 28');svg.setAttribute('aria-hidden','true');svg.setAttribute('fill','none');const path=document.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d',PATHS[id]||PATHS.tv);path.setAttribute('stroke','currentColor');path.setAttribute('stroke-width','1.8');path.setAttribute('stroke-linecap','round');path.setAttribute('stroke-linejoin','round');svg.appendChild(path);return svg;}
-  function button(id,className,label,action){const node=element('button',className);node.id=id;node.type='button';node.setAttribute('aria-label',label);node.addEventListener('click',()=>{if(opened&&!prayerActive())action();});return node;}
+  function button(id,className,label,action){const node=element('button',className);node.id=id;node.type='button';node.setAttribute('aria-label',tx(label));node.addEventListener('click',()=>{if(opened&&!prayerActive())action();});return node;}
   function get(id){return document.getElementById(id);}
   const launcher=get('settingsButton');if(window.MosqueAndroid&&launcher){launcher.classList.add('cc-launcher');launcher.setAttribute('aria-label','مركز التحكم');launcher.setAttribute('title','مركز التحكم — MENU');}
   function focus(id){const node=get(id);if(!node||node.disabled)return false;try{node.focus({preventScroll:true});}catch(_){node.focus();}if(node.scrollIntoView)node.scrollIntoView({block:'nearest',inline:'nearest'});return true;}
@@ -111,18 +113,18 @@
     panel=element('aside','mosque-control-center');panel.id='mosqueControlCenter';panel.dir='rtl';panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-label','مركز التحكم');
     content=element('div','cc-content');footer=element('div','cc-footer');overlay.append(scrim,panel);document.body.appendChild(overlay);
   }
-  function header(title,detail){const head=element('header','cc-header');head.append(element('h2','cc-title',title),element('p','cc-device',detail));return head;}
+  function header(title,detail){const head=element('header','cc-header');head.append(element('h2','cc-title',tx(title)),element('p','cc-device',detail));return head;}
   function main(){
     view='main';customRows=null;panel.replaceChildren();
     const device=typeof nativeStatus.device==='string'?nativeStatus.device:nativeStatus.device&&typeof nativeStatus.device.model==='string'?nativeStatus.device.model:'شاشة الجامع';
     const head=header('مركز التحكم',device);head.classList.add('cc-main-header');
-    const customize=button('cc-customize','cc-customize','تخصيص مركز التحكم',()=>customizeOpen());customize.textContent='تخصيص';head.appendChild(customize);panel.appendChild(head);
+    const customize=button('cc-customize','cc-customize','تخصيص مركز التحكم',()=>customizeOpen());customize.textContent=tx('تخصيص');head.appendChild(customize);panel.appendChild(head);
     const quicks=element('div','cc-quicks');quicks.setAttribute('aria-label','خيارات سريعة');
-    QUICK.forEach(row=>{const b=button('cc-quick-'+row.id,'cc-quick',row.title||row.label,()=>activate(row.id,'cc-quick-'+row.id));b.disabled=!available(row.id);b.append(element('span','cc-quick-circle'));b.firstChild.appendChild(icon(row.id));b.append(element('span','cc-quick-label',row.label));quicks.appendChild(b);});
+    QUICK.forEach(row=>{const b=button('cc-quick-'+row.id,'cc-quick',row.title||row.label,()=>activate(row.id,'cc-quick-'+row.id));b.disabled=!available(row.id);b.append(element('span','cc-quick-circle'));b.firstChild.appendChild(icon(row.id));b.append(element('span','cc-quick-label',tx(row.label)));quicks.appendChild(b);});
     panel.appendChild(quicks);content=element('div','cc-content');content.id='ccRows';
-    config.rows.forEach(id=>{const row=CATALOG.find(item=>item.id===id),b=button('cc-row-'+id,'cc-row',row.label,()=>activate(id,'cc-row-'+id));b.disabled=!available(id);const copy=element('span','cc-row-copy');copy.append(element('span','cc-row-title',row.label),element('span','cc-row-summary',summary(row)));b.append(icon(id),copy,element('span','cc-row-chevron','‹'));content.appendChild(b);});
+    config.rows.forEach(id=>{const row=CATALOG.find(item=>item.id===id),b=button('cc-row-'+id,'cc-row',row.label,()=>activate(id,'cc-row-'+id));b.disabled=!available(id);const copy=element('span','cc-row-copy');copy.append(element('span','cc-row-title',tx(row.label)),element('span','cc-row-summary',summary(row)));b.append(icon(id),copy,element('span','cc-row-chevron','‹'));content.appendChild(b);});
     panel.appendChild(content);messageNode=element('p','cc-message');messageNode.id='ccMessage';messageNode.setAttribute('role','status');panel.appendChild(messageNode);
-    footer=element('div','cc-footer');footer.appendChild(element('p','cc-footer-hint','↑ ↓ تنقّل • OK اختيار • رجوع إغلاق'));panel.appendChild(footer);statusMessage(storageNote||nativeStatus.message||'');
+    footer=element('div','cc-footer');footer.appendChild(element('p','cc-footer-hint',tx('↑ ↓ تنقّل • OK اختيار • رجوع إغلاق')));panel.appendChild(footer);statusMessage(storageNote||nativeStatus.message||'');localizePanel();
   }
   function open(){
     if(prayerActive())return false;
@@ -134,12 +136,12 @@
   }
   function optionCatalog(){const chosen=customRows.map(id=>CATALOG.find(row=>row.id===id));const remaining=CATALOG.filter(row=>!customRows.includes(row.id)&&(row.id!=='screensaver'||nativeStatus.screensaverAvailable===true||nativeStatus.available&&nativeStatus.available.screensaver===true));return chosen.concat(remaining);}
   function customizeRender(preferredId){
-    panel.replaceChildren();panel.append(header('تخصيص المركز','اختر من صف واحد إلى ستة صفوف.'));
-    const help=element('p','cc-custom-help','OK إظهار أو إخفاء • يمين تقديم • يسار تأخير • رجوع يحفظ الترتيب');panel.appendChild(help);
+    panel.replaceChildren();panel.append(header('تخصيص المركز',tx('اختر من صف واحد إلى ستة صفوف.')));
+    const help=element('p','cc-custom-help',tx('OK إظهار أو إخفاء • يمين تقديم • يسار تأخير • رجوع يحفظ الترتيب'));panel.appendChild(help);
     content=element('div','cc-content cc-options');content.id='ccCustomize';
-    optionCatalog().forEach(row=>{const selected=customRows.includes(row.id),b=button('cc-option-'+row.id,'cc-option',row.label,()=>toggleOption(row.id));b.setAttribute('role','checkbox');b.setAttribute('aria-checked',String(selected));b.dataset.ccId=row.id;const mark=element('span','cc-checkmark',selected?'✓':'');mark.setAttribute('aria-hidden','true');const copy=element('span','cc-row-copy');copy.append(element('span','cc-row-title',row.label));if(selected)copy.append(element('span','cc-row-summary','الصف '+(customRows.indexOf(row.id)+1)));b.append(mark,copy);content.appendChild(b);});
+    optionCatalog().forEach(row=>{const selected=customRows.includes(row.id),b=button('cc-option-'+row.id,'cc-option',row.label,()=>toggleOption(row.id));b.setAttribute('role','checkbox');b.setAttribute('aria-checked',String(selected));b.dataset.ccId=row.id;const mark=element('span','cc-checkmark',selected?'✓':'');mark.setAttribute('aria-hidden','true');const copy=element('span','cc-row-copy');copy.append(element('span','cc-row-title',tx(row.label)));if(selected)copy.append(element('span','cc-row-summary',tx('الصف '+(customRows.indexOf(row.id)+1))));b.append(mark,copy);content.appendChild(b);});
     panel.appendChild(content);messageNode=element('p','cc-message');messageNode.id='ccMessage';messageNode.setAttribute('role','status');panel.appendChild(messageNode);
-    footer=element('div','cc-footer cc-custom-actions');const reset=button('cc-reset','cc-reset','استعادة الترتيب الافتراضي',()=>{customRows=DEFAULT_ROWS.slice();customizeRender('cc-reset');statusMessage('استُعيد الترتيب الافتراضي؛ تم أو رجوع يحفظه.');});reset.textContent='الافتراضي';const done=button('cc-done','cc-done','تم وحفظ الترتيب',()=>customizeDone());done.textContent='تم';footer.append(reset,done);panel.appendChild(footer);statusMessage(storageNote);focus(preferredId||'cc-option-'+customRows[0]);
+    footer=element('div','cc-footer cc-custom-actions');const reset=button('cc-reset','cc-reset','استعادة الترتيب الافتراضي',()=>{customRows=DEFAULT_ROWS.slice();customizeRender('cc-reset');statusMessage('استُعيد الترتيب الافتراضي؛ تم أو رجوع يحفظه.');});reset.textContent=tx('الافتراضي');const done=button('cc-done','cc-done','تم وحفظ الترتيب',()=>customizeDone());done.textContent=tx('تم');footer.append(reset,done);panel.appendChild(footer);statusMessage(storageNote);localizePanel();focus(preferredId||'cc-option-'+customRows[0]);
   }
   function customizeOpen(){if(!opened||prayerActive())return;view='custom';customRows=config.rows.slice();customizeRender();}
   function toggleOption(id){
@@ -166,7 +168,7 @@
     }
     const active=document.activeElement,id=active&&active.id||'',quicks=QUICK.map(row=>get('cc-quick-'+row.id)).filter(node=>node&&!node.disabled),rows=config.rows.map(row=>get('cc-row-'+row)).filter(node=>node&&!node.disabled);
     if(key==='Tab'){shift(allMain(),event.shiftKey?-1:1);return true;}
-    if(id.startsWith('cc-quick-')){if(key==='ArrowDown')focus(rows[0]?rows[0].id:'cc-customize');else if(key==='ArrowUp')focus('cc-customize');else if(key==='ArrowLeft'||key==='ArrowRight')shift(quicks,key==='ArrowLeft'?1:-1);return true;}
+    if(id.startsWith('cc-quick-')){if(key==='ArrowDown')focus(rows[0]?rows[0].id:'cc-customize');else if(key==='ArrowUp')focus('cc-customize');else if(key==='ArrowLeft'||key==='ArrowRight'){const rtl=panel.dir!=='ltr';shift(quicks,key==='ArrowLeft'?(rtl?1:-1):(rtl?-1:1));}return true;}
     if(id==='cc-customize'){if(key==='ArrowUp'){const last=rows[rows.length-1]||quicks[0];if(last)focus(last.id);}else if(key==='ArrowDown'&&quicks[0])focus(quicks[0].id);return true;}
     if(rows.includes(active)){
       const index=rows.indexOf(active);
@@ -179,5 +181,6 @@
   if(document.body&&typeof MutationObserver==='function')new MutationObserver(()=>{if(opened&&prayerActive())close({immediate:true,restoreFocus:false,commit:false,remember:false});}).observe(document.body,{attributes:true,attributeFilter:['class']});
   window.addEventListener('mosque-native-update-result',refreshNative);window.addEventListener('mosque-native-power-result',refreshNative);window.addEventListener('focus',refreshNative);
   window.addEventListener('mosque-native-notice',event=>{if(opened&&!prayerActive()&&event.detail&&typeof event.detail.message==='string')statusMessage(event.detail.message);});
+  window.addEventListener('mosque-locale-change',()=>{if(launcher){launcher.setAttribute('aria-label',tx('مركز التحكم'));launcher.setAttribute('title',tx('مركز التحكم — MENU'));}refreshNative();});
   window.MosqueControl={open,close,isOpen:()=>opened,handleBack,handleKey,refreshNative,getState:()=>({view,config:clone(config),draftRows:customRows&&customRows.slice(),focusedId:document.activeElement&&document.activeElement.id||'',storageKey:STORAGE_KEY})};
 })();

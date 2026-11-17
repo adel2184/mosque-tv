@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing tag matching manifest version, for example v2.1.0
+        description: Existing tag matching manifest version, for example v2.2.0
         required: true
         type: string
 permissions:
@@ -59,7 +59,29 @@ jobs:
           $env:MOSQUE_BUILD_TOOLS = Join-Path $env:ANDROID_HOME 'build-tools/35.0.0'
           $env:MOSQUE_ANDROID_JAR = Join-Path $env:ANDROID_HOME 'platforms/android-35/android.jar'
           $env:MOSQUE_RELEASE = '1'
+          node dev/build.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node dev/check-package.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node dev/test-generator.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node dev/test-content.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node dev/test-location-engine.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node dev/test-profile-store.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node dev/test-setup-wizard.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node dev/test-profile-integration.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node dev/test-profile-adapter.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node dev/test-locale.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node dev/test-setup-provider.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node android/test-setup-fetch.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node android/test-bridge.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -77,6 +99,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node android/build.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./android/verify.ps1
           node android/release.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Publish a new signed release
@@ -85,7 +108,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh release create $env:RELEASE_TAG --verify-tag --title $env:RELEASE_TAG --notes-file android/dist/RELEASE_NOTES_AR.txt android/dist/mosque-display-tv.apk android/dist/update.json android/dist/SHA256SUMS.txt android/INSTALL_AR.txt android/README_TV_AR.md android/TEST_REPORT_TV.md
+          gh release create $env:RELEASE_TAG --verify-tag --title $env:RELEASE_TAG --notes-file android/dist/RELEASE_NOTES_AR.txt android/dist/mosque-display-tv.apk android/dist/update.json android/dist/SHA256SUMS.txt android/INSTALL_AR.txt android/README_TV_AR.md android/TEST_REPORT_TV.md docs/SETUP_AR.md
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Remove temporary signing files
         if: always()

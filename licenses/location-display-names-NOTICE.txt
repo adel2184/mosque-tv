@@ -1,0 +1,11 @@
+Country display names were generated using Node Intl.DisplayNames, whose locale
+data is derived from Unicode CLDR through ICU. The exact Node, ICU and CLDR
+versions used by this snapshot are recorded in
+dev/vendor/geonames/source-manifest.json.
+
+Unicode data and software license: licenses/Unicode-3.0.txt
+Publisher: https://www.unicode.org/
+CLDR project: https://cldr.unicode.org/
+
+Country/territory names are display labels, not a statement of official
+recognition, disputed boundaries, or government endorsement.

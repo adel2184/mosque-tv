@@ -6,6 +6,7 @@ const selected=new Set(['.gitignore','README.md','README_AR.md','DATA_SOURCES.md
 const add=(folder)=>{for(const item of fs.readdirSync(path.join(root,folder),{withFileTypes:true})){const file=folder+'/'+item.name;if(item.isDirectory()){if(!['build','dist','history'].includes(item.name))add(file);}else if(!/\.(apk|zip|p12|jks|keystore|pyc|tgz)$/i.test(file)&&!/(^|\/)password\.txt$|(?:bridge|tv-settings|control-center)-test-results\.json|\/tree\.json$/.test(file))selected.add(file);}};
 for(const folder of ['android','assets','data','dev','licenses','docs','.github'])add(folder);
 const paths=Array.from(selected).sort();
+for(const generated of ['assets/data/location-catalog.js','data/location-catalog.json']){const index=paths.indexOf(generated);if(index>=0)paths.splice(index,1);}
 const manifest=[],text=[],binary=[];
 for(const file of paths){
   if(/(^|\/)(\.android-signing|\.android-tools|\.git|research|publish|third-party|qa)(\/|$)/.test(file))throw Error('Forbidden publication path '+file);

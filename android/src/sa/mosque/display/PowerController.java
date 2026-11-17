@@ -11,8 +11,6 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.TextView;
-import java.util.Calendar;
-import java.util.TimeZone;
 import org.json.JSONObject;
 
 /** A local display schedule. Black display is deliberately never described as TV power-off. */
@@ -50,22 +48,35 @@ final class PowerController {
     static boolean within(int minute, int start, int end) {
         return PowerRules.within(minute, start, end);
     }
+    private String timezone() {
+        String zone = preferences.getString("timezone", "Asia/Riyadh");
+        return PowerRules.timezone(zone) ? zone : "Asia/Riyadh";
+    }
+    void timezone(String zone) {
+        if (!PowerRules.timezone(zone) || zone.equals(preferences.getString("timezone", null))) return;
+        if (!preferences.edit().putString("timezone", zone).commit()) {
+            JSONObject result = status();
+            try { result.put("error", true).put("message", "لم تُحفظ المنطقة الزمنية لساعات العرض؛ بقي التوقيت السابق."); } catch (org.json.JSONException ignored) { }
+            host.changed(result);
+            return;
+        }
+        apply();
+    }
     private boolean scheduledNow() {
-        Calendar clock = Calendar.getInstance(TimeZone.getTimeZone("Asia/Riyadh"));
-        int now = clock.get(Calendar.HOUR_OF_DAY) * 60 + clock.get(Calendar.MINUTE);
+        int now = PowerRules.localMinute(System.currentTimeMillis(), timezone());
         return within(now, minute(preferences.getString("start", "04:00")), minute(preferences.getString("end", "23:00")));
     }
     JSONObject status() {
         JSONObject result = new JSONObject();
-        String mode = preferences.getString("mode", "always");
+        String mode = preferences.getString("mode", "always"), zone = timezone();
         boolean active = !manualBlack && (!"scheduled".equals(mode) || scheduledNow());
         try {
             result.put("mode", mode).put("start", preferences.getString("start", "04:00"))
-                    .put("end", preferences.getString("end", "23:00")).put("active", active)
+                    .put("end", preferences.getString("end", "23:00")).put("timezone", zone).put("active", active)
                     .put("screenBlack", !prayer && (manualBlack || (!active && SystemClock.elapsedRealtime() >= operatorUntil)))
                     .put("sleepMinutes", sleepAt == 0 ? 0 : Math.max(1, (sleepAt - SystemClock.elapsedRealtime() + 59_999L) / 60_000L))
                     .put("message", "system".equals(mode) ? "السكون حسب إعدادات التلفزيون."
-                            : "scheduled".equals(mode) ? "ساعات العرض بتوقيت السعودية؛ خارجها عرض أسود مع بقاء التلفزيون مستيقظًا. هذا لا يطفئ لوحة الشاشة."
+                            : "scheduled".equals(mode) ? "ساعات العرض وفق المنطقة الزمنية " + zone + "؛ خارجها عرض أسود مع بقاء التلفزيون مستيقظًا. هذا لا يطفئ لوحة الشاشة."
                             : "تشغيل مستمر: منع السكون وشاشة التوقف أثناء ظهور تطبيق الجامع. مؤقت إطفاء TCL مستقل.");
         } catch (org.json.JSONException ignored) { }
         return result;

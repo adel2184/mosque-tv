@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "snapshotDate": "2026-11-17",
+  "generatorNode": "v24.22.3",
+  "generatorICU": "78.3",
+  "generatorCLDR": "48.0",
+  "sources": [
+    {
+      "file": "dev/vendor/geonames/cities15000.zip",
+      "url": "https://download.geonames.org/export/dump/cities15000.zip",
+      "sha256": "0f8657850fbad681c25dc222150794b60b11bbe57979c80f55ee1668f8a1bc46"
+    },
+    {
+      "file": "dev/vendor/geonames/countryInfo.txt",
+      "url": "https://download.geonames.org/export/dump/countryInfo.txt",
+      "sha256": "79f8f59ea01cbb40438bf1856dd6c2ff201f03f8fc72d0530b2646aaf603ef04"
+    },
+    {
+      "file": "dev/vendor/geonames/alternatenames/AE.zip",
+      "url": "https://download.geonames.org/export/dump/alternatenames/AE.zip",
+      "sha256": "ce3269d970a11f3b8208fa58ac48fe0c46db031f08874b11f01287fdf3370a62"
+    },
+    {
+      "file": "dev/vendor/geonames/alternatenames/BH.zip",
+      "url": "https://download.geonames.org/export/dump/alternatenames/BH.zip",
+      "sha256": "293181ad8dda42c0aef368a7517e8ee77112de537a87b172af28c49293e77b19"
+    },
+    {
+      "file": "dev/vendor/geonames/alternatenames/DJ.zip",
+      "url": "https://download.geonames.org/export/dump/alternatenames/DJ.zip",
+      "sha256": "ad3fbf9e13c8d1cac8e3310c8e6f7eafccc851fd482141c1cc7ab239c0bd75e7"
+    },
+    {
+      "file": "dev/vendor/geonames/alternatenames/DZ.zip",
+      "url": "https://download.geonames.org/export/dump/alternatenames/DZ.zip",
+      "sha256": "8a2eef1dbbe513ca4f7c62044addc929cff5b3856abbf257067c8180ffe72dc0"
+    },
+    {
+      "file": "dev/vendor/geonames/alternatenames/EG.zip",
+      "url": "https://download.geonames.org/export/dump/alternatenames/EG.zip",
+      "sha256": "f0ff16ed69a4b53f42c2db1f5871b3c8e1999d8bcb5ee1039304e8627d01b529"
+    },
+    {
+      "file": "dev/vendor/geonames/alternatenames/EH.zip",
+      "url": "https://download.geonames.org/export/dump/alternatenames/EH.zip",
+      "sha256": "9a223a9db9d41034702e68fef411df9aac3e038bbd24ce4532dcd2c584d5b13d"
+    },
+    {
+      "file": "dev/vendor/geonames/alternatenames/IQ.zip",
+      "url": "https://download.geonames.org/export/dump/alternatenames/IQ.zip",
+      "sha256": "694fab9083dda3767e6e8e21927842705f53939a68e9086cebaf817a7652474a"
+    },
+    {
+      "file": "dev/vendor/geonames/alternatenames/JO.zip",
+      "url": "https://download.geonames.org/export/dump/alternatenames/JO.zip",
+      "sha256": "f8a5d0a32e9ce2a982d600ffbe2978cffff64e88c19809e18a791114d1c75cf0"
+    },
+    {
+      "file": "dev/vendor/geonames/alternatenames/KM.zip",
+      "url": "https://download.geonames.org/export/dump/alternatenames/KM.zip",
+      "sha256": "28fd624b306e2164c1d1a0b3a631fb0de4e1bcc5026730d5698b5279104fa362"
+    },
+    {
+      "file": "dev/vendor/geonames/alternatenames/KW.zip",
+      "url": "https://download.geonames.org/export/dump/alternatenames/KW.zip",
+      "sha256": "53009278ba9a861b92b5decb98658f866d27a22db220a0e28b06200742ea8351"
+    },
+    {
+      "file": "dev/vendor/geonames/alternatenames/LB.zip",
+      "url": "https://download.geonames.org/export/dump/alternatenames/LB.zip",
+      "sha256": "560c65a563b23bde6a8fa2f0688bbf23165f2632927f0a5059653ffdaee46d35"
+    },
+    {
+      "file": "dev/vendor/geonames/alternatenames/LY.zip",
+      "url": "https://download.geonames.org/export/dump/alternatenames/LY.zip",
+      "sha256": "8d06b3eece5b05e68c6ca6c58ee07c719e2c789d1e94faab244b96c60de407b3"
+    },
+    {
+      "file": "dev/vendor/geonames/alternatenames/MA.zip",
+      "url": "https://download.geonames.org/export/dump/alternatenames/MA.zip",
+      "sha256": "62b1b836e33c31d6db4eacbfd4498207573d13ce86de552e7e83543d9e38f0bd"
+    },
+    {
+      "file": "dev/vendor/geonames/alternatenames/MR.zip",
+      "url": "https://download.geonames.org/export/dump/alternatenames/MR.zip",
+      "sha256": "0f4ad0b42793acc0ecd823ae3ba09346f869b1ac0d7e3564e5a269ff66e5bd07"
+    },
+    {
+      "file": "dev/vendor/geonames/alternatenames/OM.zip",
+      "url": "https://download.geonames.org/export/dump/alternatenames/OM.zip",
+      "sha256": "ea4fd3a6e6808528f83acea90cee9b95fccff04b8e3ac85d5ca97bff149360ba"
+    },
+    {
+      "file": "dev/vendor/geonames/alternatenames/PS.zip",
+      "url": "https://download.geonames.org/export/dump/alternatenames/PS.zip",
+      "sha256": "67d2a0248fc592ac6379c313fb469193022908bd743e2e3c0dd9fa63d4a6d96c"
+    },
+    {
+      "file": "dev/vendor/geonames/alternatenames/QA.zip",
+      "url": "https://download.geonames.org/export/dump/alternatenames/QA.zip",
+      "sha256": "8a94b8d27798482e6e2f504ae3ad6f63540d8b07e553a7218fb7f0e4eeec8178"
+    },
+    {
+      "file": "dev/vendor/geonames/alternatenames/SA.zip",
+      "url": "https://download.geonames.org/export/dump/alternatenames/SA.zip",
+      "sha256": "3e71ff58b406f86c9052ef1d4b500368ec1a285578eb215571d2252b51498bfc"
+    },
+    {
+      "file": "dev/vendor/geonames/alternatenames/SD.zip",
+      "url": "https://download.geonames.org/export/dump/alternatenames/SD.zip",
+      "sha256": "2ee4dfbc4d8c1afe24bf3da692d18e30840dc46ffe6a38818cb3952eb03d5deb"
+    },
+    {
+      "file": "dev/vendor/geonames/alternatenames/SO.zip",
+      "url": "https://download.geonames.org/export/dump/alternatenames/SO.zip",
+      "sha256": "da2d5834f4f7fd0d4624d2210cece0f329deaa3b081ebaf6b6ae726c558895ec"
+    },
+    {
+      "file": "dev/vendor/geonames/alternatenames/SY.zip",
+      "url": "https://download.geonames.org/export/dump/alternatenames/SY.zip",
+      "sha256": "d97ee11bf2491ac429ccdc5c92c59ffeab109ea2d403ae0dd7265be81cfeadca"
+    },
+    {
+      "file": "dev/vendor/geonames/alternatenames/TN.zip",
+      "url": "https://download.geonames.org/export/dump/alternatenames/TN.zip",
+      "sha256": "4255a7766e5796c3fd73b0bfb200e7faa3d8fb73e4e987e02c968952970558c4"
+    },
+    {
+      "file": "dev/vendor/geonames/alternatenames/YE.zip",
+      "url": "https://download.geonames.org/export/dump/alternatenames/YE.zip",
+      "sha256": "9cf896bbfcd173a9befcfc865d0630b4b1312bcc86260b58ab89aa9d8e6f45dd"
+    }
+  ],
+  "output": {
+    "countries": 244,
+    "cities": 34247,
+    "taggedArabicNames": 1038,
+    "taggedEnglishNames": 516,
+    "timezones": 356,
+    "catalogBytes": 4410779,
+    "catalogSHA256": "007a744461c44e7afc24e03a49ba600c8aeaf432e524dcc0a62a295d59f6cc22",
+    "catalogGzipBytes": 804372,
+    "catalogGzipSHA256": "07669e301b76015de97e37d444285980065aac032e8b3b2110858312a4a159d0",
+    "calendarBytes": 86442,
+    "calendarSHA256": "dc241ecd5268d206d943f4fcd0f6711ae2b8f1d5e6555d82ea6c831ef7767bb3",
+    "calendarMonths": 1897,
+    "sourceMonthLengths": {
+      "28": 5,
+      "29": 882,
+      "30": 1006,
+      "31": 3
+    },
+    "skipped": []
+  }
+}

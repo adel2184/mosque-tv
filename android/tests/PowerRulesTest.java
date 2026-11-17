@@ -12,6 +12,30 @@ public final class PowerRulesTest {
             checks++;
         }
         if(PowerRules.within(0,0,0)||PowerRules.within(-1,0,5)||PowerRules.within(2,-1,5)||PowerRules.within(2,0,1440))throw new AssertionError("invalid bounds");checks+=4;
-        System.out.println("PASS "+checks+" display schedule checks");
+        System.out.println("PASS "+checks+" display schedule boundary checks");
+        int zones=0;
+        for(String zone:new String[]{"Asia/Riyadh","America/New_York","Asia/Kolkata","Asia/Kathmandu","Pacific/Kiritimati","Etc/GMT+3","UTC","GMT"}){
+            if(!PowerRules.timezone(zone))throw new AssertionError("rejected time zone "+zone);zones++;
+        }
+        for(String zone:new String[]{null,"","GPS","Invented/City","GMT+03:00","UTC+03:00","EST","PST"," Asia/Riyadh","Asia/Riyadh ","../Asia/Riyadh","Asia/ريـاض"}){
+            if(PowerRules.timezone(zone))throw new AssertionError("accepted time zone "+zone);zones++;
+        }
+        long midnight=java.time.Instant.parse("2026-11-17T00:00:00Z").toEpochMilli();
+        String[] localZones={"UTC","Asia/Riyadh","Asia/Kolkata","Asia/Kathmandu","Pacific/Kiritimati","America/New_York","Etc/GMT+3"};
+        int[] localMinutes={0,180,330,345,840,1140,1260};
+        for(int i=0;i<localZones.length;i++){
+            if(PowerRules.localMinute(midnight,localZones[i])!=localMinutes[i])throw new AssertionError("local minute "+localZones[i]);zones++;
+        }
+        // New York's spring gap and autumn repeat are evaluated from actual instants.
+        String[] instants={"2026-03-08T06:59:00Z","2026-03-08T07:00:00Z","2026-11-01T05:30:00Z","2026-11-01T06:30:00Z"};
+        int[] dstMinutes={119,180,90,90};
+        for(int i=0;i<instants.length;i++){
+            int now=PowerRules.localMinute(java.time.Instant.parse(instants[i]).toEpochMilli(),"America/New_York");
+            if(now!=dstMinutes[i]||PowerRules.within(now,120,240)!=(i==1))throw new AssertionError("DST schedule "+instants[i]);zones++;
+        }
+        int ny=PowerRules.localMinute(midnight,"America/New_York"),riyadh=PowerRules.localMinute(midnight,"Asia/Riyadh");
+        if(!PowerRules.within(ny,1080,1320)||PowerRules.within(riyadh,1080,1320))throw new AssertionError("profile time-zone changes schedule");zones++;
+        try{PowerRules.localMinute(midnight,"GPS");throw new AssertionError("unknown zone silently fell back");}catch(IllegalArgumentException expected){zones++;}
+        System.out.println("PASS "+zones+" time-zone validation, conversion and DST schedule checks");
     }
 }
