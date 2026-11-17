@@ -104,8 +104,21 @@ test('Donation defaults are visible and legacy schema-version-one settings recei
 test('Permanent donation card survives all eighteen slides and all five adhan waits, hiding only during prayer',()=>{
   const app=createRuntime(stamp('2026-11-16T08:00:00')),image=app.document.getElementById('donationQR'),source=app.api.getDonationState().source;for(let index=0;index<18;index++){equal(app.api.getDonationState().hidden,false);equal(app.document.getElementById('donationQR'),image);equal(app.api.getDonationState().source,source);app.setNow(app.now()+20000);}for(const event of events){for(const moment of [event.adhan-1,event.adhan,event.iqama-1]){app.setNow(moment);equal(app.api.getDonationState().hidden,false);}app.setNow(event.iqama);equal(app.api.getDonationState().hidden,true);app.setNow(event.end);equal(app.api.getDonationState().hidden,false);equal(app.document.getElementById('donationQR'),image);}
 });
-test('Packaged donation QR is a byte-for-byte copy of the supplied Desktop/444.jpg',()=>{
-  const app=createRuntime(),source=app.api.getDonationState().source;assert(source&&!/^(?:https?:|data:|blob:)/i.test(source),'QR must use an ordinary packaged local image path');const asset=path.resolve(root,source);assert(asset.startsWith(path.join(root,'assets')+path.sep),'QR path escaped packaged assets');const supplied=path.join(process.env.USERPROFILE||'C:/Users/user','Desktop','444.jpg');assert(fs.existsSync(supplied),'Supplied original QR file unavailable for byte verification');assert(fs.existsSync(asset),'Packaged QR file missing');const original=fs.readFileSync(supplied),packaged=fs.readFileSync(asset);assert(original.equals(packaged),'Packaged QR image differs from supplied original');qrIntegrity={asset:source,originalFilename:'444.jpg',bytes:packaged.length,sha256:crypto.createHash('sha256').update(packaged).digest('hex'),byteForByteIdentical:true};
+test('Packaged donation QR matches the independently recorded original hash and original bytes when available',()=>{
+  const app=createRuntime(),source=app.api.getDonationState().source;
+  assert(source&&!/^(?:https?:|data:|blob:)/i.test(source),'QR must use an ordinary packaged local image path');
+  const asset=path.resolve(root,source);assert(asset.startsWith(path.join(root,'assets')+path.sep),'QR path escaped packaged assets');
+  assert(fs.existsSync(asset),'Packaged QR file missing');
+  // Recorded from the supplied original before publication; never derived from the asset under test.
+  const expectedOriginalSHA256='1b2a84bdd9d9d62ad6ff6d7a2000d2bc600222af95a6b97c2e21a6ed9fb42332';
+  const packaged=fs.readFileSync(asset),actualSHA256=crypto.createHash('sha256').update(packaged).digest('hex');
+  equal(actualSHA256,expectedOriginalSHA256,'Packaged QR differs from the independently recorded original');
+  const supplied=process.env.MOSQUE_ORIGINAL_QR||path.join(process.env.USERPROFILE||'C:/Users/user','Desktop','444.jpg');
+  const originalFileAvailable=fs.existsSync(supplied);
+  if(originalFileAvailable)assert(fs.readFileSync(supplied).equals(packaged),'Packaged QR image differs from supplied original bytes');
+  qrIntegrity={asset:source,originalFilename:'444.jpg',bytes:packaged.length,sha256:actualSHA256,expectedOriginalSHA256,originalFileAvailable,
+    verificationMethod:originalFileAvailable?'original-bytes-and-independent-pinned-sha256':'independent-pinned-original-sha256',
+    byteForByteIdentical:originalFileAvailable?true:null};
 });
 test('Donation schema rejects wrong types and excessive lengths while rendering editable text literally',()=>{
   const app=createRuntime();for(const invalid of [null,[],{visible:'true',title:'عنوان',description:'وصف'},{visible:true,title:4,description:'وصف'},{visible:true,title:'عنوان',description:{}},{visible:true,title:'x'.repeat(91),description:'وصف'},{visible:true,title:'عنوان',description:'x'.repeat(181)},{visible:true,title:'',description:'وصف'}]){const candidate=clone(app.api.defaults);candidate.donation=invalid;rejects(()=>app.api.validateSettings(candidate));}const maximum=clone(app.api.defaults);maximum.donation={visible:true,title:'x'.repeat(90),description:'x'.repeat(180)};app.api.validateSettings(maximum);const candidate=clone(app.api.defaults);candidate.donation.title='<img src=x onerror="malicious()">';candidate.donation.description='نص عربي <script>malicious()</script>';app.api.useSettings(candidate);equal(app.document.getElementById('donationTitle').textContent,candidate.donation.title);equal(app.document.getElementById('donationTitle').children.length,0);equal(app.document.getElementById('donationDescription').textContent,candidate.donation.description);

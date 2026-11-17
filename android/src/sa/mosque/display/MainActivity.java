@@ -88,6 +88,7 @@ public final class MainActivity extends Activity {
     private UpdateManager updater;
     private LocalPhoneServer phone;
     private volatile boolean foreground;
+    private int wakingKey = -1;
 
     private final Runnable menuLongPress = new Runnable() {
         @Override public void run() {
@@ -642,11 +643,24 @@ public final class MainActivity extends Activity {
         });
     }
 
-    @Override public boolean onKeyDown(int keyCode, KeyEvent event) {
-        if (power != null && power.isBlack() && !praying) {
-            power.operator();
-            if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) { injectShortcut(false); return true; }
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        int key = event.getKeyCode();
+        if (wakingKey == key) {
+            if (event.getAction() == KeyEvent.ACTION_UP) wakingKey = -1;
+            return true;
         }
+        // Intercept before WebView can consume the D-pad beneath the black schedule layer.
+        if (event.getAction() == KeyEvent.ACTION_DOWN && power != null && power.isBlack() && !praying
+                && (key == KeyEvent.KEYCODE_DPAD_CENTER || key == KeyEvent.KEYCODE_ENTER || key == KeyEvent.KEYCODE_MENU
+                || key == KeyEvent.KEYCODE_BACK || key == KeyEvent.KEYCODE_DPAD_UP || key == KeyEvent.KEYCODE_DPAD_DOWN
+                || key == KeyEvent.KEYCODE_DPAD_LEFT || key == KeyEvent.KEYCODE_DPAD_RIGHT)) {
+            wakingKey = key; power.operator();
+            if (key == KeyEvent.KEYCODE_DPAD_CENTER || key == KeyEvent.KEYCODE_ENTER || key == KeyEvent.KEYCODE_MENU) injectShortcut(false);
+            return true;
+        }
+        return super.dispatchKeyEvent(event);
+    }
+    @Override public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (keyCode == KeyEvent.KEYCODE_MENU) {
             if (event.getRepeatCount() == 0) {
                 menuDown = true; menuLongHandled = false; event.startTracking();
@@ -719,6 +733,7 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onPause() {
         foreground = false;
+        wakingKey = -1;
         menuDown = false; handler.removeCallbacks(menuLongPress); dismissOperatorDialog();
         if (webView != null) webView.onPause();
         super.onPause();
