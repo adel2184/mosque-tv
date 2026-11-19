@@ -120,6 +120,8 @@ Prayer times, iqama countdowns, and adhkar for your mosque display.
 
 تثبيت 2.5.1 فوق 2.5.0 يحفظ بيانات الجامع وجدول مواقيته. يعرض محدّث التلفاز أحدث إصدار منشور. [الإصدارات الرسمية](https://github.com/adel2184/mosque-tv/releases/latest) · [تقرير التحقق](android/TEST_REPORT_TV.md)
 
+حجم ملف `mosque-display-tv.apk` الموقّع للإصدار **v2.5.1** (رمز الإصدار **15**) هو 1,649,258 بايت. طابق بصمة SHA-256 عند التحقق من التنزيل مع `e0b6cce341cc9b725a71bb79629bbc9d2acab1529d0a63a9691484e1c8aa5fa4`. [بيانات تحديث التلفاز](android/UPDATE_FEED.md)
+
 <a id="faq"></a>
 ## أسئلة شائعة
 

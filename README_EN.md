@@ -129,6 +129,8 @@ Open **Version and updates → Check for an app update**, download the release, 
 
 Installing 2.5.1 over 2.5.0 retains your mosque profile and prayer timetable. The TV updater shows the latest published release. [Releases](https://github.com/adel2184/mosque-tv/releases/latest) · [Verification report (Arabic)](android/TEST_REPORT_TV.md)
 
+The signed **v2.5.1** APK (`versionCode 15`) is 1,649,258 bytes. To verify a download of `mosque-display-tv.apk`, compare its SHA-256 digest with `e0b6cce341cc9b725a71bb79629bbc9d2acab1529d0a63a9691484e1c8aa5fa4`. [TV update metadata](android/UPDATE_FEED.md)
+
 <a id="faq"></a>
 ## Frequently asked questions
 

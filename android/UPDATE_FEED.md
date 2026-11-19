@@ -7,25 +7,26 @@ Set them to the public GitHub repository that publishes this app. The updater re
 `https://api.github.com/repos/OWNER/REPOSITORY/releases/latest` and accepts only a
 non-draft, non-prerelease release. `metadataAsset` defaults to `update.json`.
 
-Each release must attach `update.json` and the named APK to that same release:
+Attach `update.json`, `mosque-display-tv.apk` and `SHA256SUMS.txt` to the same
+stable GitHub Release. The v2.5.1 feed generated from the signed APK is
 
 ```json
 {
   "schemaVersion": 1,
   "packageName": "sa.mosque.display",
-  "versionName": "2.3.0",
-  "versionCode": 9,
+  "versionName": "2.5.1",
+  "versionCode": 15,
   "minSdk": 24,
   "apk": {
     "name": "mosque-display-tv.apk",
-    "size": 1234567,
-    "sha256": "REPLACE_WITH_64_HEX_CHARACTERS_FROM_THE_EXACT_SIGNED_APK"
+    "size": 1649258,
+    "sha256": "e0b6cce341cc9b725a71bb79629bbc9d2acab1529d0a63a9691484e1c8aa5fa4"
   }
 }
 ```
 
-The example is documentation, not a valid release feed. Generate its size/hash from
-the final signed APK after all packaging/signing steps. Keep versionName/code/minSdk
+The TV reads the attached `update.json`. Generate it after signing each APK and
+verify both files against `SHA256SUMS.txt`. Keep versionName/code/minSdk
 identical to the APK manifest. The app rejects equal or lower codes, another package,
 another current signing certificate, an incompatible minSdk, truncated/oversized
 downloads and hash mismatches. The hard maximum is 32 MiB, and config can lower it.
