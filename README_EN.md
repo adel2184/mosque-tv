@@ -39,11 +39,11 @@ Mosque TV is a free, silent app for **Android TV and Google TV** in mosques and 
 
 <a id="screenshots"></a>
 
-> 🖼️ These browser previews show v2.3.2 with sample data. The control centre preview simulates Android options. You can switch the interface between English and Arabic. Duas, adhkar and Qur’anic verses stay in Arabic.
+> 🖼️ These browser captures show **Mosque TV v2.5.1** with a sample mosque profile and simulated Android options in the control centre. You can switch the interface between English and Arabic. Duas, adhkar and Qur’anic verses stay in Arabic. Select an image to enlarge it. [Phone settings screenshot](#phone-settings-preview)
 
-| Main display in Arabic | “Straighten your rows” prayer screen | Control centre |
+| Friday morning display | Prayer mode and phone reminder | Control centre (Arabic) |
 | :---: | :---: | :---: |
-| [![Clock and prayer timetable in Arabic](docs/images/display-ar.webp)](docs/images/display-ar.webp) | [![أقيموا صفوفكم on a black background](docs/images/prayer-mode.webp)](docs/images/prayer-mode.webp) | [![Control centre open at the side of the display](docs/images/control-center-ar.webp)](docs/images/control-center-ar.webp) |
+| [![Clock, prayer timetable and Jumu’ah countdown in English](docs/images/display-en.webp)](docs/images/display-en.webp) | [![“Straighten your rows” and a reminder to silence phones, in Arabic on a black background](docs/images/prayer-mode.webp)](docs/images/prayer-mode.webp) | [![Control centre open beside the prayer timetable](docs/images/control-center-ar.webp)](docs/images/control-center-ar.webp) |
 
 ---
 
@@ -130,6 +130,12 @@ Use your phone’s keyboard to enter text or edit an announcement.
    * **Settings** lets you edit the mosque name and neighbourhood, add or reorder announcements, adjust prayer and iqama times, set the clock format and alerts, and export or restore a settings backup.
 
 4. Tap **Save & Apply to TV** to send the changes together. The session ends when you close the pairing window on the TV or when the session times out. [Phone controls guide (Arabic)](docs/CONTROL_CENTER_AR.md)
+
+<a id="phone-settings-preview"></a>
+
+<p align="center">
+  <a href="docs/images/phone-settings-en.webp"><img src="docs/images/phone-settings-en.webp" width="360" alt="Editing the mosque name, neighbourhood and weekly lesson announcement on a phone, with the Save &amp; Apply to TV button below"></a>
+</p>
 
 ---
 
