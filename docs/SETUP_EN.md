@@ -55,7 +55,7 @@ The donation card starts hidden on a fresh install. Configure it and explicitly 
 - The bundled civil Umm al-Qura calendar covers **1924-08-01 to 2077-11-16**. This is calendar coverage; setup prepares prayer times only for the current and following year. Hijri date changes at midnight in the selected time zone.
 - The app is silent. At iqama it shows a black prayer screen with **أقيموا صفوفكم** (“Straighten your rows”), then returns automatically after the configured duration.
 - Display schedules and the display timer show black inside the app; they do not switch off the TV panel. Auto-start after reboot or power loss depends on the TV.
-- Optional phone pairing works on a shared trusted LAN for 15 minutes. Open a text editor on the TV before sending text from your phone.
+- On staff-only Wi-Fi, scan the TV’s pairing QR, compare the code on both screens and approve it with the TV remote. One phone is authorized for up to 15 minutes. The local HTTP link is unencrypted. Use the physical remote on guest Wi-Fi and for sensitive text.
 - Daily display remains local. Internet is needed only for online actions such as updates, UmmahAPI downloads, speed tests, or confirmed problem reports.
 
 Detailed advanced guides and hardware test reports are currently in Arabic: [TV operation](../android/README_TV_AR.md), [control center](CONTROL_CENTER_AR.md), [location and calendar](LOCATION_SOURCES_AR.md), and [verification report](../android/TEST_REPORT_TV.md).

@@ -1,6 +1,11 @@
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $projectRoot = Split-Path -Parent $PSScriptRoot
+[xml]$manifest = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $PSScriptRoot 'AndroidManifest.xml')
+$androidNs = 'http://schemas.android.com/apk/res/android'
+$versionName = $manifest.DocumentElement.GetAttribute('versionName', $androidNs)
+$versionCode = [int]$manifest.DocumentElement.GetAttribute('versionCode', $androidNs)
+if ($versionName -notmatch '^\d+\.\d+\.\d+$' -or $versionCode -lt 1) { throw 'Invalid source version.' }
 $apkPath = Join-Path $PSScriptRoot 'dist/mosque-display-tv.apk'
 $build = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'dist/build-report.json') -Raw | ConvertFrom-Json
 $apkHash = (Get-FileHash -LiteralPath $apkPath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -39,6 +44,21 @@ try {
   if ([System.Text.Encoding]::ASCII.GetString($dex,0,4) -ne "dex`n") { throw 'Invalid DEX header.' }
   if (-not [System.Text.Encoding]::ASCII.GetString($dex).Contains('https://mosque-tv-reports-adel2184.netlify.app/api/reports')) { throw 'Report receiver differs from the owner-selected service.' }
   $packedHtml = [System.Text.Encoding]::UTF8.GetString((Read-ApkBytes 'assets/web/index.html'))
+  if ((Byte-Hash (Read-ApkBytes 'assets/phone.html')) -ne (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'phone.html') -Algorithm SHA256).Hash.ToLowerInvariant()) {
+    throw 'Phone control page differs from its tested source.'
+  }
+  $policy = [regex]::Match($packedHtml, '<head>\s*<meta http-equiv="Content-Security-Policy" content="([^"]+)">').Groups[1].Value
+  $scriptPolicy = [regex]::Match($policy, "(?:^|;\s*)script-src ([^;]+)").Groups[1].Value
+  $expectedSources = @("'self'")
+  foreach ($id in @('prayer-calculation-library','location-engine-code','profile-store-code','locale-code','setup-provider-code','android-tv-bridge','application-code')) {
+    $blocks = [regex]::Matches($packedHtml, ('<script id="' + $id + '">([\s\S]*?)</script>'))
+    if ($blocks.Count -ne 1) { throw "Missing or duplicate executable script in APK: $id" }
+    $scriptText = $blocks[0].Groups[1].Value -replace "\r\n?", "`n"
+    $digest = [System.Security.Cryptography.SHA256]::Create()
+    try { $hash = [Convert]::ToBase64String($digest.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($scriptText))) } finally { $digest.Dispose() }
+    $expectedSources += "'sha256-$hash'"
+  }
+  if (Compare-Object -CaseSensitive ($scriptPolicy -split '\s+') $expectedSources) { throw 'Script policy does not match trusted scripts in the signed APK.' }
   $sourceHtml = Get-Content -LiteralPath (Join-Path $projectRoot 'index.html') -Raw -Encoding UTF8
   $pattern = '<script id="application-code">([\s\S]*?)</script>'
   if ([regex]::Match($packedHtml,$pattern).Groups[1].Value -cne [regex]::Match($sourceHtml,$pattern).Groups[1].Value) { throw 'Core application code changed while packaging.' }
@@ -62,7 +82,7 @@ try {
   $qrHash = Byte-Hash (Read-ApkBytes 'assets/web/assets/announcements/donation-qr.jpg')
   if ($qrHash -ne (Get-FileHash -LiteralPath (Join-Path $projectRoot 'assets/announcements/donation-qr.jpg') -Algorithm SHA256).Hash.ToLowerInvariant()) { throw 'Donation QR changed in APK.' }
   if ($build.badging -notmatch "package: name='sa.mosque.display'" -or $build.badging -notmatch 'leanback-launchable-activity:') { throw 'TV launcher or package missing.' }
-  if ($build.badging -notmatch "versionCode='11'" -or $build.badging -notmatch "versionName='2.3.2'" -or $build.manifestTree -notmatch 'android.intent.category.HOME' -or $build.manifestTree -notmatch 'android.intent.category.DEFAULT') { throw 'Updated HOME candidate filter/version missing.' }
+  if (-not $build.badging.Contains("versionCode='$versionCode'") -or -not $build.badging.Contains("versionName='$versionName'") -or $build.manifestTree -notmatch 'android.intent.category.HOME' -or $build.manifestTree -notmatch 'android.intent.category.DEFAULT') { throw 'Updated HOME candidate filter/version missing.' }
   $permissions = @([regex]::Matches($build.badging,"uses-permission: name='([^']+)'") | ForEach-Object {$_.Groups[1].Value})
   $expectedPermissions = @('android.permission.INTERNET','android.permission.ACCESS_NETWORK_STATE','android.permission.REQUEST_INSTALL_PACKAGES')
   if (@(Compare-Object $expectedPermissions $permissions).Count -ne 0) { throw 'Unexpected app permission set.' }
@@ -72,8 +92,9 @@ try {
   if ($build.signatureVerification -notmatch 'Signer #1 certificate SHA-256 digest: 4cb9564d63fd3f037d12e2ed98af1bf7255a7fb7ef53d6a57aba020b5e9b061e') { throw 'Signing identity changed; upgrade would not preserve installed app.' }
   $result = [ordered]@{
     verifiedAt = [DateTime]::UtcNow.ToString('o'); apkSHA256 = $apkHash; apkBytes = (Get-Item -LiteralPath $apkPath).Length
-    entryCount = $names.Count; minSdk = $build.minSdk; targetSdk = $build.targetSdk; versionName = '2.3.2'; versionCode = 11; tvLauncher = $true; homeCandidate = $true
+    entryCount = $names.Count; minSdk = $build.minSdk; targetSdk = $build.targetSdk; versionName = $versionName; versionCode = $versionCode; tvLauncher = $true; homeCandidate = $true
     requestedPermissions = $permissions; updateRepository = 'adel2184/mosque-tv'; signatureV2 = $true; signatureV3 = $true; originalSigningIdentity = $true; coreScriptUnchanged = $true; tvBridgeMatchesSource = $true
+    packagedScriptHashes = $expectedSources.Count - 1; phonePageMatchesSource = $true
     embeddedJsonBlocks = $jsonCount; prayerRecords = 732; adhkar = $enabled.Count; originalQrSHA256 = $qrHash
     locationCatalogSHA256 = $catalogHash; setupCalendarStart = $setupCalendar.rangeStart; setupCalendarEnd = $setupCalendar.rangeEnd; setupCalendarMonthStarts = $setupCalendar.months.Count
     communityProfiles = $deviceProfiles.profiles.Count; communityProfilesSHA256 = $deviceProfilesHash; localReportAssetsMatch = $true; reportReceiver = 'https://mosque-tv-reports-adel2184.netlify.app/api/reports'

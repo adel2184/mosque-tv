@@ -17,3 +17,6 @@ qa/*.jpg
 .netlify/
 **/node_modules/
 /services/reports/.netlify/
+
+# Local discovery output retained by older QA runs.
+/qa/local-tv-discovery.json

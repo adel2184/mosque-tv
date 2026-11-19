@@ -37,5 +37,15 @@ public final class PowerRulesTest {
         if(!PowerRules.within(ny,1080,1320)||PowerRules.within(riyadh,1080,1320))throw new AssertionError("profile time-zone changes schedule");zones++;
         try{PowerRules.localMinute(midnight,"GPS");throw new AssertionError("unknown zone silently fell back");}catch(IllegalArgumentException expected){zones++;}
         System.out.println("PASS "+zones+" time-zone validation, conversion and DST schedule checks");
+        if (PowerRules.nextCheckDelay(false, 0, 1_000, 0, 0) != Long.MAX_VALUE
+                || PowerRules.nextCheckDelay(true, 59_999, 1_000, 0, 0) != 1
+                || PowerRules.nextCheckDelay(true, 60_000, 1_000, 1_080, 0) != 80
+                || PowerRules.nextCheckDelay(false, 0, 1_000, 0, 61_100) != 100
+                || PowerRules.nextCheckDelay(false, 0, 1_100, 0, 61_100) != 60_000
+                || PowerRules.nextCheckDelay(false, 0, 61_099, 0, 61_100) != 1
+                || PowerRules.nextCheckDelay(true, 60_000, 61_100, 0, 0) != 60_000) {
+            throw new AssertionError("Display power callback deadline");
+        }
+        System.out.println("PASS 7 idle, schedule, operator and countdown callback checks");
     }
 }

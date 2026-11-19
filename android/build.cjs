@@ -11,7 +11,9 @@ const buildTools=aapt2&&path.dirname(aapt2);
 const androidJar=process.env.MOSQUE_ANDROID_JAR||find(path.join(tools,'platform'),'android.jar');
 if(!java||!aapt2||!androidJar)throw Error('Missing developer Java / Android Build Tools 35 / platform android.jar. See SOURCES_LICENSES.md.');
 const stamp=new Date().toISOString().replace(/[:.]/g,'-');
-const work=path.join(__dirname,'build',stamp),out=path.join(__dirname,'dist');
+const releaseBuild = process.env.MOSQUE_RELEASE === '1';
+const work=path.join(__dirname,'build',stamp);
+const out=releaseBuild ? path.join(__dirname,'dist') : path.join(__dirname,'build','development-dist');
 for(const part of ['classes','dex','assets/web','compiled-res'])fs.mkdirSync(path.join(work,part),{recursive:true});fs.mkdirSync(out,{recursive:true});
 // Some native SDK utilities use the Windows ANSI path API. Relative ASCII paths
 // keep the project usable even when its parent folder has an Arabic name.
@@ -20,14 +22,56 @@ const walk=(folder,extension)=>fs.readdirSync(folder,{withFileTypes:true}).flatM
 let html=fs.readFileSync(path.join(root,'index.html'),'utf8');
 const bridge=fs.readFileSync(path.join(__dirname,'tv-bridge.js'),'utf8');new Function(bridge);
 html=html.replace('<script id="application-code">',()=>'<script id="android-tv-bridge">\n'+bridge+'\n</script>\n<script id="application-code">');
+// Authorize the known inline programs after inserting the native bridge. WebView's HTML
+// parser normalizes CR and CRLF before CSP hashes the script's UTF-8 text.
+const scriptIds = ['prayer-calculation-library', 'location-engine-code', 'profile-store-code',
+  'locale-code', 'setup-provider-code', 'android-tv-bridge', 'application-code'];
+const scriptHashes = scriptIds.map(id => {
+  const tag = '<script id="' + id + '">';
+  const start = html.indexOf(tag);
+  const end = html.indexOf('</script>', start + tag.length);
+  if (start < 0 || end < 0 || html.indexOf(tag, start + tag.length) !== -1) {
+    throw Error('Missing or duplicate packaged script: ' + id);
+  }
+  const script = html.slice(start + tag.length, end).replace(/\r\n?/g, '\n');
+  return "'sha256-" + crypto.createHash('sha256').update(script, 'utf8').digest('base64') + "'";
+});
+const policy = "script-src 'self' " + scriptHashes.join(' ') + "; worker-src blob:; child-src blob:";
+if (!html.includes('<head>')) throw Error('Cannot apply packaged document policy');
+html = html.replace('<head>', '<head>\n<meta http-equiv="Content-Security-Policy" content="' + policy + '">');
 fs.writeFileSync(path.join(work,'assets/web/index.html'),html,'utf8');
-fs.cpSync(path.join(root,'assets'),path.join(work,'assets/web/assets'),{recursive:true});
-fs.cpSync(path.join(root,'licenses'),path.join(work,'assets/web/licenses'),{recursive:true});
+// Everything copied here becomes readable by anyone holding the signed APK.
+const assetGroups = [
+  ['assets', 'web/assets', [
+    'announcements/donation-qr.jpg', 'announcements/etiquette.svg',
+    'data/location-catalog.js', 'fonts/NotoSansArabic-Arabic.woff2',
+    'fonts/NotoSansArabic-Latin.woff2', 'fonts/OFL.txt', 'fonts/SOURCE.txt'
+  ]],
+  ['licenses', 'web/licenses', [
+    'CleanYourTV-MIT.txt', 'CleanYourTV-NOTICE.txt', 'Unicode-3.0.txt',
+    'adhan-MIT.txt', 'geonames-CC-BY-4.0.txt', 'geonames-NOTICE.txt',
+    'hijridate-MIT.txt', 'location-display-names-NOTICE.txt', 'qrcodegen-MIT.txt'
+  ]],
+  ['services/reports/public', 'reports', [
+    'index.html', 'report-form.js', 'report-schema.js', 'report.css'
+  ]]
+];
+const canonicalRoot = fs.realpathSync(root);
+for (const [source, destination, files] of assetGroups) {
+  for (const name of files) {
+    const input = path.join(canonicalRoot, source, name);
+    if (fs.realpathSync(input) !== input || !fs.lstatSync(input).isFile()) {
+      throw Error('Expected a regular packaged asset: ' + name);
+    }
+    const output = path.join(work, 'assets', destination, name);
+    fs.mkdirSync(path.dirname(output), {recursive:true});
+    fs.copyFileSync(input, output);
+  }
+}
 fs.copyFileSync(path.join(root,'DATA_SOURCES.md'),path.join(work,'assets/web/DATA_SOURCES.md'));
 fs.copyFileSync(path.join(__dirname,'SOURCES_LICENSES.md'),path.join(work,'assets/web/ANDROID_SOURCES_LICENSES.md'));
 fs.copyFileSync(path.join(__dirname,'update-config.json'),path.join(work,'assets/update-config.json'));
 fs.copyFileSync(path.join(__dirname,'phone.html'),path.join(work,'assets/phone.html'));
-fs.cpSync(path.join(root,'services/reports/public'),path.join(work,'assets/reports'),{recursive:true});
 const deviceProfiles=JSON.parse(fs.readFileSync(path.join(__dirname,'device-profiles.json'),'utf8'));
 fs.copyFileSync(path.join(__dirname,'device-profiles.json'),path.join(work,'assets/device-profiles.json'));
 const profilePackages=[...new Set(deviceProfiles.profiles.flatMap(profile=>profile.packages))];
@@ -42,13 +86,18 @@ run(java,['-cp',path.join(buildTools,'lib/d8.jar'),'com.android.tools.r8.D8','--
 // Put DEX at the required ZIP root; preserve the compiled Android resources.
 const jar=path.join(path.dirname(java),'jar.exe');
 run(jar,['uf',path.join(work,'unsigned.apk'),'-C',path.join(work,'dex'),'classes.dex']);
-run(javac,['-encoding','UTF-8','--release','8','-d',path.join(work,'helper'),path.join(__dirname,'tools/NormalizeApk.java')]);
+// This packaging helper runs on the build JDK. Only the app classes target Android.
+run(javac,['-encoding','UTF-8','-d',path.join(work,'helper'),path.join(__dirname,'tools/NormalizeApk.java')]);
 run(java,['-cp',path.join(work,'helper'),'NormalizeApk',path.join(work,'unsigned.apk'),path.join(work,'normalized.apk')]);
 run(path.join(buildTools,'zipalign.exe'),['-f','4',path.join(work,'normalized.apk'),path.join(work,'aligned.apk')]);
-const signing=path.join(root,'.android-signing');fs.mkdirSync(signing,{recursive:true});
+const defaultSigning = path.join(root, '.android-signing');
+const signing = releaseBuild
+  ? path.resolve(process.env.MOSQUE_RELEASE_SIGNING_DIR || defaultSigning)
+  : path.join(defaultSigning, 'development');
+if (!releaseBuild) fs.mkdirSync(signing, {recursive:true});
 const key=path.join(signing,'mosque-display.p12'),password=path.join(signing,'password.txt');
 if(!fs.existsSync(key)){
-  if(process.env.MOSQUE_RELEASE==='1')throw Error('Original release signing key is required; refusing to create a replacement key.');
+  if(releaseBuild)throw Error('Original release signing key is required; refusing to create a replacement key.');
   fs.writeFileSync(password,crypto.randomBytes(32).toString('hex'),{mode:0o600});
   run(keytool,['-genkeypair','-keystore',key,'-storetype','PKCS12','-alias','mosque-display','-keyalg','RSA','-keysize','3072','-validity','10000','-dname','CN=Mosque Display Local Build','-storepass:file',password,'-keypass:file',password]);
 }

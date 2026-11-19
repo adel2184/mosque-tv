@@ -1,16 +1,28 @@
 'use strict';
 // Explicit publication allowlist. Never traverses signing/tools/research/distribution folders.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
+const {execFileSync}=require('node:child_process');
 const root=path.resolve(__dirname,'..'),out=path.join(root,'publish');fs.mkdirSync(out,{recursive:true});
 const selected=new Set(['.gitattributes','.gitignore','README.md','README_AR.md','README_EN.md','CONTRIBUTING.md','DATA_SOURCES.md','TEST_REPORT.md','index.html','test.html']);
-const add=(folder)=>{for(const item of fs.readdirSync(path.join(root,folder),{withFileTypes:true})){const file=folder+'/'+item.name;if(item.isDirectory()){if(!['build','dist','history','node_modules','.netlify'].includes(item.name))add(file);}else if(!/\.(apk|zip|p12|jks|keystore|pyc|tgz)$/i.test(file)&&!/(^|\/)password\.txt$|(?:bridge|tv-settings|control-center)-test-results\.json|\/tree\.json$/.test(file))selected.add(file);}};
-for(const folder of ['android','assets','data','dev','licenses','docs','.github','services','optimize'])if(fs.existsSync(path.join(root,folder)))add(folder);
+const folders=['android','assets','data','dev','licenses','docs','.github','services','optimize'];
+const tracked=execFileSync('git',['ls-files','--cached','-z','--',...folders],{cwd:root,encoding:'utf8'});
+const excluded=/(?:^|\/)(?:build|dist|history|node_modules|\.netlify|\.android-signing|\.android-tools)(?:\/|$)|(?:^|\/)(?:\.env(?:\.|$)|\.npmrc$|password\.txt$|tree\.json$)|\.(?:apk|zip|p12|pfx|jks|keystore|key|pem|pyc|tgz)$|(?:bridge|tv-settings|control-center)-test-results\.json$/i;
+for(const file of tracked.split('\0'))if(file&&!excluded.test(file)&&fs.existsSync(path.join(root,file)))selected.add(file);
+// These named public additions are also needed when preparing a working-tree export before a commit.
+const publicAdditions=['docs/DEVELOPMENT.md','docs/SETUP_EN.md','docs/PROJECT_NOTES_AR.md',
+  'dev/capture-readme.cjs','dev/preview-file.cjs',
+  'android/src/sa/mosque/display/PhoneApproval.java','android/tests/PhoneApprovalTest.java',
+  'android/test-phone-pairing.cjs','android/test-phone-client.cjs',
+  ...['display-ar','display-en','prayer-mode','setup-ar','control-center-ar'].map(name=>'docs/images/'+name+'.webp')];
+for(const file of publicAdditions)if(fs.existsSync(path.join(root,file)))selected.add(file);
 const paths=Array.from(selected).sort();
 for(const generated of ['assets/data/location-catalog.js','data/location-catalog.json']){const index=paths.indexOf(generated);if(index>=0)paths.splice(index,1);}
 const manifest=[],text=[],binary=[];
 for(const file of paths){
   if(/(^|\/)(\.android-signing|\.android-tools|\.git|research|publish|third-party|qa)(\/|$)/.test(file))throw Error('Forbidden publication path '+file);
-  const bytes=fs.readFileSync(path.join(root,file));const decoded=bytes.toString('utf8');
+  const input=path.join(fs.realpathSync(root),file);
+  if(fs.realpathSync(input)!==input||!fs.lstatSync(input).isFile())throw Error('Expected a regular public source file: '+file);
+  const bytes=fs.readFileSync(input);const decoded=bytes.toString('utf8');
   const item={path:file,bytes:bytes.length,sha256:crypto.createHash('sha256').update(bytes).digest('hex')};manifest.push(item);
   if(!Buffer.from(decoded,'utf8').equals(bytes)||bytes.includes(0))binary.push({...item,base64:bytes.toString('base64')});
   else text.push({path:file,mode:'100644',type:'blob',content:decoded});

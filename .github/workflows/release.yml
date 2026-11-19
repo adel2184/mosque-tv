@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing tag matching manifest version, for example v2.2.0
+        description: Select the protected release tag as the workflow ref and repeat its name here.
         required: true
         type: string
 permissions:
@@ -14,97 +14,101 @@ concurrency:
   group: signed-android-release
   cancel-in-progress: false
 jobs:
+  verify-source:
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') && github.ref_protected &&
+      ((github.event_name == 'push' && vars.RELEASE_SIGNING_ENABLED == 'true') ||
+       (github.event_name == 'workflow_dispatch' && inputs.tag == github.ref_name))
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require a release commit on the default branch
+        shell: pwsh
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if ($env:GITHUB_REF_NAME -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Invalid version tag.' }
+          [xml]$manifest = Get-Content -LiteralPath 'android/AndroidManifest.xml' -Raw
+          $version = $manifest.DocumentElement.GetAttribute('versionName','http://schemas.android.com/apk/res/android')
+          if ($env:GITHUB_REF_NAME -cne "v$version") { throw 'Tag and manifest version differ.' }
+          git merge-base --is-ancestor HEAD "refs/remotes/origin/$env:DEFAULT_BRANCH"
+          if ($LASTEXITCODE -ne 0) { throw 'Release commit is outside the default branch history.' }
+  checks:
+    needs: verify-source
+    uses: ./.github/workflows/checks.yml
+    permissions:
+      contents: read
   release:
-    if: github.event_name == 'workflow_dispatch' || vars.RELEASE_SIGNING_ENABLED == 'true'
+    needs: checks
     runs-on: windows-latest
     timeout-minutes: 30
     environment: release-signing
     permissions:
       contents: write
     env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      RELEASE_TAG: ${{ github.ref_name }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Require original signing secrets
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '26.13.1'
+          package-manager-cache: false
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: 'false'
+      - name: Rebuild the reviewed web bundle
+        shell: pwsh
+        run: |
+          node dev/build.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git diff --exit-code -- index.html
+          if ($LASTEXITCODE -ne 0) { throw 'Generated web bundle differs from the approved tag.' }
+      - name: Sign the APK
         shell: pwsh
         env:
           MOSQUE_KEYSTORE_BASE64: ${{ secrets.MOSQUE_KEYSTORE_BASE64 }}
           MOSQUE_KEYSTORE_PASSWORD: ${{ secrets.MOSQUE_KEYSTORE_PASSWORD }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:MOSQUE_KEYSTORE_BASE64) -or [string]::IsNullOrWhiteSpace($env:MOSQUE_KEYSTORE_PASSWORD)) {
-            throw 'Original signing secrets are missing. No new key will be generated. Configure the protected release-signing environment only after owner approval.'
+            throw 'Original signing credentials are required.'
           }
           $signingDir = Join-Path $env:GITHUB_WORKSPACE '.android-signing'
-          New-Item -ItemType Directory -Force $signingDir | Out-Null
-          [IO.File]::WriteAllBytes((Join-Path $signingDir 'mosque-display.p12'), [Convert]::FromBase64String($env:MOSQUE_KEYSTORE_BASE64))
-          [IO.File]::WriteAllText((Join-Path $signingDir 'password.txt'), $env:MOSQUE_KEYSTORE_PASSWORD, [Text.UTF8Encoding]::new($false))
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: '20'
-      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
-        with:
-          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
-          log-accepted-android-sdk-licenses: 'false'
-      - name: Build using the original key and generate feed
+          if (Test-Path -LiteralPath $signingDir) { throw 'Signing directory already exists.' }
+          New-Item -ItemType Directory -Path $signingDir -ErrorAction Stop | Out-Null
+          $keyFile = Join-Path $signingDir 'mosque-display.p12'
+          $passwordFile = Join-Path $signingDir 'password.txt'
+          try {
+            [IO.File]::WriteAllBytes($keyFile, [Convert]::FromBase64String($env:MOSQUE_KEYSTORE_BASE64))
+            [IO.File]::WriteAllText($passwordFile, $env:MOSQUE_KEYSTORE_PASSWORD, [Text.UTF8Encoding]::new($false))
+            Remove-Item Env:MOSQUE_KEYSTORE_BASE64, Env:MOSQUE_KEYSTORE_PASSWORD
+            $env:MOSQUE_JAVA_HOME = $env:JAVA_HOME
+            $env:MOSQUE_BUILD_TOOLS = Join-Path $env:ANDROID_HOME 'build-tools/35.0.0'
+            $env:MOSQUE_ANDROID_JAR = Join-Path $env:ANDROID_HOME 'platforms/android-35/android.jar'
+            $env:MOSQUE_RELEASE = '1'
+            node android/build.cjs
+            if ($LASTEXITCODE -ne 0) { throw 'APK signing failed.' }
+          } finally {
+            foreach ($file in @($passwordFile, $keyFile)) {
+              if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file -Force -ErrorAction Stop }
+            }
+            [IO.Directory]::Delete($signingDir)
+          }
+      - name: Verify the signed artifact and generate release metadata
         shell: pwsh
         run: |
-          $env:MOSQUE_JAVA_HOME = $env:JAVA_HOME
-          $env:MOSQUE_BUILD_TOOLS = Join-Path $env:ANDROID_HOME 'build-tools/35.0.0'
-          $env:MOSQUE_ANDROID_JAR = Join-Path $env:ANDROID_HOME 'platforms/android-35/android.jar'
-          $env:MOSQUE_RELEASE = '1'
-          node dev/build.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node dev/check-package.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node dev/test-generator.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node dev/test-content.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node dev/test-location-engine.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node dev/test-profile-store.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node dev/test-setup-wizard.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node dev/test-profile-integration.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node dev/test-profile-adapter.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node dev/test-locale.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node dev/test-setup-provider.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node android/test-setup-fetch.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node android/test-device-optimization.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node android/test-device-profiles.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node services/reports/test/reports.test.mjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node android/test-bridge.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node android/test-tv-settings.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node android/test-update.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node android/test-release.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node android/test-power.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node android/test-control-center.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node android/test-network-speed.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node android/build.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./android/verify.ps1
           node android/release.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -116,11 +120,3 @@ jobs:
         run: |
           gh release create $env:RELEASE_TAG --verify-tag --title $env:RELEASE_TAG --notes-file android/dist/RELEASE_NOTES_AR.txt android/dist/mosque-display-tv.apk android/dist/update.json android/dist/SHA256SUMS.txt android/INSTALL_AR.txt android/README_TV_AR.md android/TEST_REPORT_TV.md docs/SETUP_AR.md
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Remove temporary signing files
-        if: always()
-        shell: pwsh
-        run: |
-          $signingDir = [IO.Path]::GetFullPath((Join-Path $env:GITHUB_WORKSPACE '.android-signing'))
-          $workspace = [IO.Path]::GetFullPath($env:GITHUB_WORKSPACE)
-          if ($signingDir -ne (Join-Path $workspace '.android-signing')) { throw 'Unexpected signing path' }
-          if (Test-Path -LiteralPath $signingDir) { Remove-Item -LiteralPath $signingDir -Recurse -Force }

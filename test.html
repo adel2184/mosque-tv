@@ -9,18 +9,40 @@ body{background:#0b151c;color:#f2ede2;font:18px/1.8 Tahoma,Arial,sans-serif;max-
 <h1>اختبارات شاشة الجامع المحلية</h1>
 <p>تشغّل هذه الصفحة حالات التحقق على منطق التطبيق الفعلي داخل ملف <a href="index.html">index.html</a>، دون خادم أو اتصال بالإنترنت. لا تغيّر الساعة الحقيقية أو الإعدادات المحفوظة.</p>
 <p class="notice">هذه اختبارات برمجية، ويحتاج وضوح العرض وملء الشاشة وتشغيل الجهاز إلى فحص عملي منفصل. افتح هذه الصفحة في المتصفح نفسه الذي سيشغّل الشاشة.</p>
-<button id="run" disabled>تشغيل الاختبارات</button>
-<p id="status" aria-live="polite">جارٍ تحميل التطبيق في وضع الاختبار…</p>
+<button id="run">تشغيل الاختبارات</button>
+<p id="status" aria-live="polite">اضغط لبدء التحقق من بيانات الاختبار المحلية.</p>
 <ol id="results"></ol>
-<iframe id="application" title="نسخة التطبيق للاختبار" src="index.html?test=1"></iframe>
-<script src="dev/acceptance.js"></script>
+<iframe id="application" title="نسخة التطبيق للاختبار"></iframe>
 <script>
 'use strict';
 const frame=document.getElementById('application');
-const pending=new Map();let serial=0;
-function rpc(request){return new Promise((resolve,reject)=>{const id=++serial;const timeout=setTimeout(()=>{pending.delete(id);reject(new Error('لم يستجب التطبيق لطلب الاختبار'));},15000);pending.set(id,{resolve,reject,timeout});frame.contentWindow.postMessage({...request,type:'mosque-test-rpc',id},'*');});}
-window.addEventListener('message',event=>{if(event.source!==frame.contentWindow||event.data?.type!=='mosque-test-result')return;const job=pending.get(event.data.id);if(!job)return;clearTimeout(job.timeout);pending.delete(event.data.id);event.data.ok?job.resolve(event.data.value):job.reject(new Error(event.data.error));});
-frame.addEventListener('load',async()=>{try{await rpc({property:'defaults'});document.getElementById('run').disabled=false;document.getElementById('status').textContent='التطبيق جاهز. اضغط لتشغيل الاختبارات.';}catch(error){document.getElementById('status').textContent=error.message;}});
-document.getElementById('run').addEventListener('click',async()=>{const button=document.getElementById('run');button.disabled=true;document.getElementById('results').replaceChildren();document.getElementById('status').textContent='جارٍ التحقق…';try{const report=await runMosqueAcceptance((method,...args)=>rpc({method,args}),property=>rpc({property}));report.results.forEach(result=>{const li=document.createElement('li');li.className=result.pass?'pass':'fail';li.textContent=(result.pass?'نجح: ':'لم ينجح: ')+result.name+(result.error?' — '+result.error:'');document.getElementById('results').append(li);});document.getElementById('status').textContent='النتيجة: '+report.passed+' من '+report.total+'؛ الإخفاقات: '+report.failed;window.mosqueTestReport=report;}catch(error){document.getElementById('status').textContent='تعذر استكمال الاختبار: '+error.message;}finally{button.disabled=false;}});
+const run=document.getElementById('run'),status=document.getElementById('status'),results=document.getElementById('results');
+let deadline=0;
+function finish(report){
+  clearTimeout(deadline);
+  deadline=0;
+  run.disabled=false;
+  if(!report){status.textContent='تعذر إكمال الاختبارات المحلية.';return;}
+  report.results.forEach(item=>{
+    const line=document.createElement('li');
+    line.className=item.pass?'pass':'fail';
+    line.textContent=(item.pass?'نجح: ':'لم ينجح: ')+item.name+(item.error?' — '+item.error:'');
+    results.append(line);
+  });
+  status.textContent='النتيجة: '+report.passed+' من '+report.total+'؛ الإخفاقات: '+report.failed;
+  window.mosqueTestReport=report;
+}
+window.addEventListener('message',event=>{
+  const allowedOrigin=event.origin===location.origin || (location.protocol==='file:' && event.origin==='null');
+  if(!deadline||event.source!==frame.contentWindow||!allowedOrigin)return;
+  if(event.data?.type==='mosque-acceptance-complete')finish(event.data.report);
+});
+run.addEventListener('click',()=>{
+  run.disabled=true;results.replaceChildren();window.mosqueTestReport=null;
+  status.textContent='جارٍ التحقق من بيانات الاختبار المحلية…';
+  deadline=setTimeout(()=>finish(null),60000);
+  // A new request reloads the fixture on repeated runs.
+  frame.src='index.html?test=1&run='+Date.now()+'#acceptance';
+});
 </script>
 </html>

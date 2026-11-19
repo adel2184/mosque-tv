@@ -49,10 +49,14 @@
     }
     return null;
   }
+  let hijriFormatter, hijriFormatterZone;
   function nativeHijri(key) {
-    const f = new Intl.DateTimeFormat('en-US-u-ca-islamic-umalqura-nu-latn',{timeZone:ZONE,calendar:'islamic-umalqura',year:'numeric',month:'numeric',day:'numeric'});
-    if(f.resolvedOptions().calendar!=='islamic-umalqura') throw new Error('calendar');
-    const p = Object.fromEntries(f.formatToParts(timestamp(key,'12:00')).map(x=>[x.type,x.value]));
+    if(hijriFormatterZone!==ZONE){
+      const formatter=new Intl.DateTimeFormat('en-US-u-ca-islamic-umalqura-nu-latn',{timeZone:ZONE,calendar:'islamic-umalqura',year:'numeric',month:'numeric',day:'numeric'});
+      if(formatter.resolvedOptions().calendar!=='islamic-umalqura') throw new Error('calendar');
+      hijriFormatter=formatter;hijriFormatterZone=ZONE;
+    }
+    const p = Object.fromEntries(hijriFormatter.formatToParts(timestamp(key,'12:00')).map(x=>[x.type,x.value]));
     return {year:Number(p.year),month:Number(p.month),day:Number(p.day)};
   }
   let calendarNativeOK=false;
@@ -99,7 +103,7 @@
     if(out.donation.visible&&!out.donation.title.trim())fail('أدخل عنوان مشروع التبرع قبل إظهار البطاقة.');
     return out;
   }
-  function validateTimetable(db) {
+  function validateTimetable(db, {savedInstallation=false}={}) {
     if(!db||typeof db!=='object'||!db.metadata||!Array.isArray(db.records))fail('ملف المواقيت يجب أن يتضمن metadata وrecords.');
     const m=db.metadata, y=m.targetYear;
     const configured=Boolean(activeProfile&&locationEngine);
@@ -107,6 +111,18 @@
     for(const k of ['source','dataVersion','generatedOn','verificationStatus'])textValue(m[k],2000,'بيانات المصدر: '+k);
     if(!['calculated-needs-review','authority-supplied-unverified'].includes(m.verificationStatus))fail('حالة التحقق غير مدعومة؛ يلزم الاحتفاظ ببيان مراجعة مستقل.');
     if(!m.source.trim()||!m.dataVersion.trim()||!validDate(m.generatedOn))fail('بيانات المصدر أو تاريخ التوليد ناقصة.');
+    if(configured){
+      if(m.countryId!==undefined && m.countryId!==activeProfile.countryId)fail('بلد الجدول لا يطابق البلد المختار.');
+      if(m.cityId!==undefined && m.cityId!==activeProfile.cityId)fail('مدينة الجدول لا تطابق المدينة المختارة.');
+      // Existing installations can have an authority's free-form city label.
+      // Require a matching catalog identity whenever an operator brings in a new table.
+      if(!savedInstallation && m.verificationStatus==='authority-supplied-unverified' && m.cityId===undefined){
+        const country=setupCatalog.countries.find(item=>item.id===activeProfile.countryId);
+        const city=country?.cities.find(item=>String(item.id)===activeProfile.cityId);
+        const name=m.city.trim().toLowerCase();
+        if(![activeProfile.cityId,city?.nameAr,city?.nameEn].some(value=>value&&value.trim().toLowerCase()===name))fail('حدّد معرّف المدينة الصحيح في بيانات الجدول قبل الاستيراد.');
+      }
+    }
     if(m.verificationStatus==='calculated-needs-review'){
       if(!m.coordinates||!m.calculation||typeof m.calculation!=='object'||Array.isArray(m.calculation))fail('إحداثيات المواقيت المحسوبة ومعاملاتها مطلوبة.');
       number(m.coordinates.latitude,configured?-89:-60,configured?89:60,'خط عرض الجدول');number(m.coordinates.longitude,-180,180,'خط طول الجدول');
@@ -116,7 +132,6 @@
         if(!preset||calc.method!==activeProfile.methodId||Math.abs(m.coordinates.latitude-activeProfile.latitude)>0.00001||Math.abs(m.coordinates.longitude-activeProfile.longitude)>0.00001)fail('مصدر الجدول لا يطابق الموقع وطريقة الحساب المختارين.');
         const remote=calc.library==='UmmahAPI (remote astronomical calculation)'&&m.sourceUrl==='https://ummahapi.com/api/docs';
         if((remote?(calc.fajrAngle!==null||calc.ishaAngle!==null):(calc.fajrAngle!==preset.fajrAngle||calc.ishaAngle!==preset.ishaAngle))||calc.asrShadowFactor!==1||calc.ishaMinutesOutsideRamadan!==preset.ishaMinutesOutsideRamadan||calc.ishaMinutesRamadan!==preset.ishaMinutesRamadan)fail('معاملات الجدول لا تطابق طريقة الحساب المختارة.');
-        if((m.cityId&&m.cityId!==activeProfile.cityId)||(m.countryId&&m.countryId!==activeProfile.countryId))fail('الجدول لا يطابق المدينة والدولة المختارتين.');
       }else if(calc.fajrAngle!==18.5||calc.asrShadowFactor!==1||calc.ishaMinutesOutsideRamadan!==90||calc.ishaMinutesRamadan!==120)fail('معاملات المواقيت المحسوبة لا تطابق طريقة أم القرى الموثقة لهذه النسخة.');
       for(const k of configured?['library','method','rounding']:['library','method','rounding','ramadanCalendar'])textValue(calc[k],500,'معامل الحساب '+k);
     }
@@ -161,10 +176,17 @@
     }
     return events.sort((a,b)=>a.adhan-b.adhan);
   }
-  function resolveState(ms,events,db,suppressedId) {
-    const key=dateKey(ms), year=Number(key.slice(0,4));
+  function resolveState(ms,events,db,suppressedId,key=dateKey(ms)) {
+    const year=Number(key.slice(0,4));
     if(!db)return {phase:'UNAVAILABLE',active:null,next:null,targetAt:null,highlight:null};
-    const active=events.find(e=>ms>=e.adhan&&ms<e.end);
+    // buildEvents validates non-overlap and sorts by adhan. Find the first future event.
+    let low=0,high=events.length;
+    while(low<high){
+      const middle=low+Math.floor((high-low)/2);
+      if(events[middle].adhan<=ms)low=middle+1;else high=middle;
+    }
+    const latest=low>0?events[low-1]:null;
+    const active=latest&&ms<latest.end?latest:null;
     // Let the final supported day's Isha finish across the terminal boundary.
     if(!db.metadata.displayYears.includes(year)||!db.index.has(key)){
       if(active&&db.metadata.displayYears.includes(Number(active.date.slice(0,4)))){
@@ -175,8 +197,8 @@
     }
     if(active&&ms<active.iqama)return {phase:'WAITING_FOR_IQAMA',active,next:active,targetAt:active.iqama,highlight:active.prayer};
     if(active&&active.id!==suppressedId)return {phase:'PRAYER_MODE',active,next:null,targetAt:active.end,highlight:active.prayer};
-    const next=events.find(e=>e.adhan>ms)||null;
-    const hasPrevious=events.some(e=>e.end<=ms||(e.id===suppressedId&&e.iqama<=ms));
+    const next=events[low]||null;
+    const hasPrevious=Boolean(latest&&(latest.end<=ms||(latest.id===suppressedId&&latest.iqama<=ms)));
     return {phase:hasPrevious?'WAITING_FOR_NEXT_ADHAN':'WAITING_FOR_ADHAN',active:null,next,targetAt:next?.adhan||null,highlight:next?.prayer||null};
   }
   function safeRead(storage,key){try{return {ok:true,value:storage.getItem(key)};}catch(error){return {ok:false,value:null,error:String(error)};}}
@@ -184,13 +206,14 @@
   async function attemptFullscreen(element){try{const fn=element.requestFullscreen||element.webkitRequestFullscreen;if(!fn)return false;await fn.call(element);return true;}catch(_){return false;}}
   const slideAdvance=(i,count)=>count>0?(i+1)%count:0;
   let storageNote='', savedSettings=clone(defaults), currentSettings, draft=null, database=null, events=[], databaseError='', nowProvider=()=>Date.now();
-  let suppressedId=null, state=null, lastDate='', lastRenderSignature='', lastPhase='', settingsOpen=false;
+  let suppressedId=null, state=null, lastDate='', lastRenderSignature='', lastPhase='', settingsOpen=false, previewApplied=false;
   const STORE='mosque-display.settings.v1', TABLE_STORE='mosque-display.timetable.v1';
-  let storage,legacySettingsPresent=false,nativeInstall={};try{storage=window.localStorage;}catch(_){storageNote='التخزين المحلي غير متاح؛ صدّر الإعدادات للاحتفاظ بها بعد إغلاق الصفحة.';}
+  const acceptanceFixture=!window.MosqueAndroid && location.hash==='#acceptance' && new URLSearchParams(location.search).get('test')==='1';
+  let storage,legacySettingsPresent=acceptanceFixture,nativeInstall={};try{if(!acceptanceFixture)storage=window.localStorage;}catch(_){storageNote='التخزين المحلي غير متاح؛ صدّر الإعدادات للاحتفاظ بها بعد إغلاق الصفحة.';}
   try{if(typeof window.MosqueAndroid?.setupStatus==='function')nativeInstall=JSON.parse(String(window.MosqueAndroid.setupStatus()));else if(window.MosqueAndroid)nativeInstall={legacyUpgrade:true};}catch(_){nativeInstall={legacyUpgrade:true};}
   if(storage){
     const s=safeRead(storage,STORE);legacySettingsPresent=Boolean(s.value);
-    if(profileStore&&locationEngine){try{const candidate=profileStore.read(storage);if(candidate){activeProfile=locationEngine.validateProfile(candidate.profile,setupCatalog);ZONE=activeProfile.timezone;calendar=setupCalendar;savedSettings=validateSettings(candidate.settings);database=validateTimetable(candidate.timetable);installation=candidate;}}catch(error){installationError=String(error.message||error);databaseError=installationError;database=null;}}
+    if(profileStore&&locationEngine){try{const candidate=profileStore.read(storage);if(candidate){activeProfile=locationEngine.validateProfile(candidate.profile,setupCatalog);ZONE=activeProfile.timezone;calendar=setupCalendar;savedSettings=validateSettings(candidate.settings);database=validateTimetable(candidate.timetable,{savedInstallation:true});installation=candidate;}}catch(error){installationError=String(error.message||error);databaseError=installationError;database=null;}}
     if(!installation&&!installationError){if(!s.ok)storageNote='تعذر قراءة التخزين المحلي؛ تعمل الإعدادات في هذه الجلسة.';else if(s.value){try{savedSettings=validateSettings(JSON.parse(s.value));}catch(_){storageNote='ملف الإعدادات المحفوظ غير صالح؛ استُخدمت الإعدادات الأصلية.';}}}
   }
   if(!installation&&!installationError)try{database=validateTimetable(sourceDatabase);if(storage){const stored=safeRead(storage,TABLE_STORE);if(stored.value){try{database=validateTimetable(JSON.parse(stored.value));}catch(_){storageNote+=' جدول المواقيت المحفوظ غير صالح؛ استُخدم الجدول المرفق.';}}}}catch(error){databaseError=error.message;}
@@ -340,7 +363,7 @@
   function tick(){
     const ms=nowProvider(), key=dateKey(ms), clock=formatClock(ms,currentSettings.digitStyle);
     if($('clockTime').textContent!==clock.time)$('clockTime').textContent=clock.time;if($('clockPeriod').textContent!==clock.period)$('clockPeriod').textContent=clock.period;
-    state=resolveState(ms,events,database,suppressedId);
+    state=resolveState(ms,events,database,suppressedId,key);
     if(key!==lastDate){lastDate=key;renderDates(ms);renderPrayerTable(ms);}
     const signature=key+'/'+state.phase+'/'+state.highlight+'/'+(state.next?.date||'')+'/'+currentSettings.digitStyle;
     if(signature!==lastRenderSignature){
@@ -371,7 +394,15 @@
     }
   }
   function refresh(){lastDate='';lastRenderSignature='';contentMode='';if(window.MosqueLocale)window.MosqueLocale.set(activeProfile?.language||'ar');rows.forEach((ui,k)=>ui.row.querySelector('th').textContent=prayerName(k));renderMosque();tick();}
-  function useSettings(candidate){const validated=validateSettings(candidate);const next=database?buildEvents(database,validated):[];currentSettings=validated;events=next;refresh();}
+  function applySettings(validated,preparedEvents){
+    currentSettings=validated;events=preparedEvents;
+    if(settingsOpen)previewApplied=true;
+    refresh();
+  }
+  function useSettings(candidate){
+    const validated=validateSettings(candidate);
+    applySettings(validated,database?buildEvents(database,validated):[]);
+  }
   function plainTimetable(db){return {metadata:clone(db.metadata),records:clone(db.records)};}
   function withProfile(profile,action){const before={profile:activeProfile,zone:ZONE,calendar};try{activeProfile=locationEngine.validateProfile(profile,setupCatalog);ZONE=activeProfile.timezone;calendar=setupCalendar;return action(activeProfile);}finally{activeProfile=before.profile;ZONE=before.zone;calendar=before.calendar;}}
   function setupSettings(profile){
@@ -476,17 +507,23 @@
     const current=tvSections.find(section=>section.id===tvSectionId)||tvSections[0];if(!current)return;tvSectionId=current.id;
     const hub=el('div','tv-hub tv-pane-'+tvPane);hub.id='tvSettingsHub';
     const back=button(tvPane==='menu'?'‹ مركز التحكم':'‹ كل الإعدادات',tvHandleBack);back.id='tvSettingsBack';back.className='tv-settings-back';hub.append(back);
-    const menu=el('nav','tv-settings-menu');menu.setAttribute('aria-label','أقسام الإعدادات');
-    tvSections.forEach(section=>{const b=button(section.title,()=>{tvSectionId=section.id;tvPane='rows';tvRenderHub();tvFocus($('tvSettingsRows')?.querySelector('button:not([disabled])')?.id);});b.id='tv-section-'+section.id;b.className='tv-menu-item';b.classList.toggle('selected',section.id===tvSectionId);b.dataset.tvZone='menu';menu.append(b);});
-    const pane=el('section','tv-settings-pane');pane.append(el('h3','tv-section-heading',current.title));
-    if(current.help)pane.append(el('p','tv-section-help',current.help));
-    const list=el('div','tv-settings-rows');list.id='tvSettingsRows';
-    current.rows.forEach(row=>{
-      const b=button('',()=>{tvLastFocus=b.id;if(row.kind==='action'){try{row.action();if(settingsOpen&&!tvEditor)drawSettings();}catch(error){message(error.message,true);}}else if(row.kind!=='info')tvOpenEditor(row);});
-      b.id='tv-row-'+row.id;b.className='tv-setting-row';b.dataset.tvZone='rows';b.dataset.tvKind=row.kind;b.disabled=Boolean(row.disabled)||row.kind==='info';
-      const copy=el('span','tv-row-copy');copy.append(el('span','tv-row-label',row.label));if(row.help)copy.append(el('span','tv-row-help',row.help));b.append(copy,el('span','tv-row-value',tvSummary(row)));list.append(b);
-    });
-    pane.append(list);hub.append(tvPane==='menu'?menu:pane);$('settingsBody').replaceChildren(hub);list.scrollTop=tvScroll[tvSectionId]||0;
+    if(tvPane==='menu'){
+      const menu=el('nav','tv-settings-menu');menu.setAttribute('aria-label','أقسام الإعدادات');
+      tvSections.forEach(section=>{const b=button(section.title,()=>{tvSectionId=section.id;tvPane='rows';tvRenderHub();tvFocus($('tvSettingsRows')?.querySelector('button:not([disabled])')?.id);});b.id='tv-section-'+section.id;b.className='tv-menu-item';b.classList.toggle('selected',section.id===tvSectionId);b.dataset.tvZone='menu';menu.append(b);});
+      hub.append(menu);
+    }else{
+      const pane=el('section','tv-settings-pane');pane.append(el('h3','tv-section-heading',current.title));
+      if(current.help)pane.append(el('p','tv-section-help',current.help));
+      const list=el('div','tv-settings-rows');list.id='tvSettingsRows';
+      current.rows.forEach(row=>{
+        const b=button('',()=>{tvLastFocus=b.id;if(row.kind==='action'){try{row.action();if(settingsOpen&&!tvEditor)drawSettings();}catch(error){message(error.message,true);}}else if(row.kind!=='info')tvOpenEditor(row);});
+        b.id='tv-row-'+row.id;b.className='tv-setting-row';b.dataset.tvZone='rows';b.dataset.tvKind=row.kind;b.disabled=Boolean(row.disabled)||row.kind==='info';
+        const copy=el('span','tv-row-copy');copy.append(el('span','tv-row-label',row.label));if(row.help)copy.append(el('span','tv-row-help',row.help));b.append(copy,el('span','tv-row-value',tvSummary(row)));list.append(b);
+      });
+      pane.append(list);hub.append(pane);
+    }
+    $('settingsBody').replaceChildren(hub);
+    const visibleRows=$('tvSettingsRows');if(visibleRows)visibleRows.scrollTop=tvScroll[tvSectionId]||0;
     if(preferredFocus&&$(preferredFocus))tvFocus(preferredFocus);
     tvKeepSelectedMenuVisible();
   }
@@ -591,18 +628,41 @@
   }
   // TV_SETTINGS_UI_END
   function openSettings(section,fromControl){if(state?.phase==='PRAYER_MODE')return;if(settingsOpen)return;tvControlOrigin=Boolean(fromControl);if(typeof section==='string')tvSectionId=section;draft=clone(savedSettings);settingsOpen=true;document.body.classList.add('settings-open');tvPane=fromControl&&section!=='mosque'?'rows':'menu';$('settingsDialog').classList.remove('previewing');$('previewButton').textContent='معاينة';drawSettings();message('التغييرات مسودة؛ احفظها للاعتماد أو ارجع لإلغائها.');$('settingsDialog').showModal();if(tvMode)tvFocus(tvPane==='menu'?'tv-section-'+tvSectionId:$('tvSettingsRows')?.querySelector('button:not([disabled])')?.id||'tvSettingsBack');interaction();}
-  function closeSettings(cancel){tvEditor=null;$('tvEditor')?.remove();settingsOpen=false;document.body.classList.remove('settings-open');draft=null;$('settingsDialog').close();$('settingsDialog').classList.remove('previewing');$('previewButton').textContent='معاينة';if(window.MosqueTVNative?.onClose)window.MosqueTVNative.onClose();if(cancel){try{useSettings(savedSettings);}catch(error){message(error.message,true);}}if(tvMode&&state?.phase!=='PRAYER_MODE'){if(tvControlOrigin&&window.MosqueControl)window.MosqueControl.open();else tvFocus('settingsButton');}tvControlOrigin=false;interaction();}
+  function closeSettings(cancel){
+    const restorePreview=previewApplied;
+    previewApplied=false;tvEditor=null;$('tvEditor')?.remove();settingsOpen=false;
+    document.body.classList.remove('settings-open');draft=null;$('settingsDialog').close();
+    $('settingsDialog').classList.remove('previewing');$('previewButton').textContent='معاينة';
+    if(window.MosqueTVNative?.onClose)window.MosqueTVNative.onClose();
+    if(cancel){try{if(restorePreview)useSettings(savedSettings);else tick();}catch(error){message(error.message,true);}}
+    if(tvMode&&state?.phase!=='PRAYER_MODE'){if(tvControlOrigin&&window.MosqueControl)window.MosqueControl.open();else tvFocus('settingsButton');}
+    tvControlOrigin=false;interaction();
+  }
   function launchControls(){if(window.MosqueSetup?.isOpen())return;if(setupPending&&window.MosqueSetup){window.MosqueSetup.open({required:true});return;}if(tvMode&&window.MosqueControl){if(settingsOpen){closeSettings(true);return;}if(window.MosqueControl.isOpen())window.MosqueControl.close();else window.MosqueControl.open();}else openSettings();}
   function download(name,value){const blob=new Blob([JSON.stringify(value,null,2)],{type:'application/json;charset=utf-8'}),url=URL.createObjectURL(blob),a=el('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
   function exportTimetable(){if(database)download('mosque-prayer-timetable.json',{metadata:database.metadata,records:database.records});}
-  function readFile(file,onload){if(!file)return;if(file.size>3000000)return message('الملف أكبر من الحد المسموح (3 ميغابايت).',true);const reader=new FileReader();reader.onload=()=>{try{onload(JSON.parse(reader.result));}catch(error){message('لم يُطبّق الملف: '+error.message,true);}};reader.onerror=()=>message('تعذرت قراءة الملف المحلي.',true);reader.readAsText(file,'UTF-8');}
+  let importGeneration=0;
+  function readFile(file,onload){
+    if(!settingsOpen || !file)return;
+    const generation=++importGeneration, session=draft;
+    const current=()=>settingsOpen && draft===session && generation===importGeneration && state?.phase!=='PRAYER_MODE';
+    if(file.size>3000000)return message('الملف أكبر من الحد المسموح (3 ميغابايت).',true);
+    const reader=new FileReader();
+    reader.onload=()=>{
+      if(!current())return;
+      try{onload(JSON.parse(reader.result));}
+      catch(error){message('لم يُطبّق الملف: '+error.message,true);}
+    };
+    reader.onerror=()=>{if(current())message('تعذرت قراءة الملف المحلي.',true);};
+    reader.readAsText(file,'UTF-8');
+  }
   $('settingsButton').addEventListener('click',launchControls);
   $('previewButton').addEventListener('click',()=>{try{if(tvMode&&$('settingsDialog').classList.contains('previewing')){$('settingsDialog').classList.remove('previewing');$('previewButton').textContent='معاينة';drawSettings();tvFocus('tv-section-'+tvSectionId);return;}useSettings(draft);message('المعاينة مطبّقة مؤقتًا. احفظ للاعتماد أو ألغِ للرجوع.');$('settingsDialog').classList.add('previewing');if(tvMode){$('previewButton').textContent='العودة للإعدادات';tvFocus('previewButton');}}catch(error){message(error.message,true);}});
   $('saveButton').addEventListener('click',()=>{try{
     // Commit the validated draft before rendering: saving may itself enter prayer mode.
-    const candidate=validateSettings(draft);if(database)buildEvents(database,candidate);
+    const candidate=validateSettings(draft),nextEvents=database?buildEvents(database,candidate):[];
     const result=persistCurrent(candidate,database);if(!result.ok)throw Error(tr('تعذر الحفظ محليًا؛ لم تُعتمد المسودة. صدّر نسخة احتياطية وحاول مجددًا.','Could not save locally. The draft remains unsaved; export a backup and try again.'));
-    savedSettings=clone(candidate);closeSettings(false);useSettings(candidate);
+    savedSettings=clone(candidate);closeSettings(false);applySettings(candidate,nextEvents);
   }catch(error){message(error.message,true);}});
   $('cancelButton').addEventListener('click',()=>closeSettings(true));
   $('settingsDialog').addEventListener('cancel',e=>{e.preventDefault();if(tvMode)tvHandleBack();else closeSettings(true);});
@@ -642,17 +702,20 @@
       getDonationState:()=>({hidden:$('donationCard').hidden,visible:currentSettings.donation.visible,source:displayContent.donation.image,title:currentSettings.donation.title,description:currentSettings.donation.description,imageAvailable:donationImageAvailable}),
       getTickerState:()=>({hidden:$('mosqueTicker').hidden,paused:$('mosqueTicker').classList.contains('ticker-paused'),texts:displayContent.ticker.map(item=>item.text)})};
     window.MosqueApp=api;
-    window.addEventListener('message',async event=>{
-      if(event.source!==parent||!event.data||event.data.type!=='mosque-test-rpc')return;
-      const {id,method,args=[],property}=event.data;
-      try{
-        let value;
-        if(property&&['defaults','database','calendar','calendarNativeOK'].includes(property))value=api[property];
-        else if(['dateKey','addDays','formatClock','hijriFallback','validateSettings','validateTimetable','buildEvents','resolveState','slideAdvance'].includes(method))value=api[method](...args);
-        else throw Error('اختبار غير مدعوم');
-        event.source.postMessage({type:'mosque-test-result',id,ok:true,value},'*');
-      }catch(error){event.source.postMessage({type:'mosque-test-result',id,ok:false,error:error.message},'*');}
-    });
-    parent.postMessage({type:'mosque-test-ready'},'*');
+    if(acceptanceFixture && parent!==window){
+      const runner=document.createElement('script');
+      runner.src='dev/acceptance.js';
+      // The offline harness gets only the status of checks against bundled fixtures.
+      const target=location.protocol==='file:'?'*':location.origin;
+      const finish=report=>parent.postMessage({type:'mosque-acceptance-complete',report},target);
+      runner.onload=async()=>{
+        try{
+          const report=await window.runMosqueAcceptance((method,...args)=>api[method](...args),key=>api[key]);
+          finish(report);
+        }catch(_){finish(null);}
+      };
+      runner.onerror=()=>finish(null);
+      document.head.appendChild(runner);
+    }
   }
 })();

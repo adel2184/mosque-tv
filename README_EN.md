@@ -8,9 +8,9 @@
 
 [**العربية**](README.md) · [**English**](README_EN.md)
 
-<p><strong>Download on your TV with Downloader App</strong><br><strong>Download code: <code>1062755</code></strong></p>
+<p><strong>First installation on your TV</strong></p>
 
-<p>Open <strong>Downloader App</strong> on your TV, enter <code>1062755</code>, and select <strong>Go</strong>.<br>After downloading the APK, select <strong>Install</strong>, allow installation from Downloader if Android asks, then open <strong>شاشة الجامع / Mosque TV</strong>.</p>
+<p>Open the <a href="https://github.com/adel2184/mosque-tv/releases/latest">official Mosque TV release page</a> from the project owner, <code>adel2184/mosque-tv</code>. Choose <code>mosque-display-tv.apk</code>. If browsing GitHub is difficult on the TV, download on a computer and follow the USB instructions below.</p>
 
 [![Latest release](https://img.shields.io/github/v/release/adel2184/mosque-tv?label=Release&color=176b50)](https://github.com/adel2184/mosque-tv/releases/latest)
 ![Android 7 or later](https://img.shields.io/badge/Android-7%2B-176b50)
@@ -61,19 +61,23 @@ These are browser previews of the actual 2.3.2 source UI using demonstration dat
 
 | Path | Requirements | Start here |
 | --- | --- | --- |
-| **Android TV / Google TV** | Android 7+, a compatible WebView, and a remote | **Downloader App: `1062755`** or [download APK](https://github.com/adel2184/mosque-tv/releases/latest/download/mosque-display-tv.apk) |
+| **Android TV / Google TV** | Android 7+, a compatible WebView, and a remote | [Official APK release](https://github.com/adel2184/mosque-tv/releases/latest) |
 | **Computer or browser preview** | A modern browser and the source; Node.js for the initial build | [Build and run guide](docs/DEVELOPMENT.md), with [detailed browser instructions (Arabic)](README_AR.md) |
 
 ### On your TV
 
-**Directly on your TV:** open Downloader App and use code **`1062755`**, then complete installation as described at the top of this page.
+**On a TV that already has a verified copy:** use **Version and updates → Check for an app update**. If using Downloader code `1062755`, confirm the release belongs to `adel2184/mosque-tv`. Keep the existing app installed so Android can compare signatures.
 
 **Using a USB drive or file transfer:**
 
-1. Open the [latest release](https://github.com/adel2184/mosque-tv/releases/latest) and download **`mosque-display-tv.apk`**. You do not need source files or developer tools on the TV.
+1. Download **`mosque-display-tv.apk`** from the [official release page](https://github.com/adel2184/mosque-tv/releases/latest).
 2. Copy the APK to a USB drive and open it on the TV with a file manager that supports APK installation. You can also use a file-transfer method you trust.
 3. If Android asks, allow installation from the file manager you are using and complete the system installation dialog.
-4. Open **شاشة الجامع / Mosque TV** in the apps list and complete setup below. The USB drive and computer are no longer needed for everyday display.
+4. On an existing installation, choose **Update** and keep the app and its data in place. For a first installation, open **شاشة الجامع / Mosque TV** from the apps list and complete setup below. You can then remove the USB drive.
+
+**Checking a USB copy.** On Windows, open PowerShell in the download folder and run `Get-FileHash .\mosque-display-tv.apk -Algorithm SHA256`. Compare all 64 characters with the APK entry in `SHA256SUMS.txt` supplied with that exact distribution. If they differ, obtain a fresh copy before installation.
+
+If someone supplied the APK separately, your technician can also verify its identity with Android SDK Build Tools. Run `apksigner verify --print-certs mosque-display-tv.apk` and check for a successful exit and the original signer certificate SHA-256 `4cb9564d63fd3f037d12e2ed98af1bf7255a7fb7ef53d6a57aba020b5e9b061e`.
 
 **Already installed?** Install the update over the existing app, keeping its data. Export a settings backup if possible. If Android rejects the update, check the download source and signing certificate before considering any uninstall.
 
@@ -103,14 +107,14 @@ The [English setup guide](docs/SETUP_EN.md) covers every step and timetable sour
 | On-screen gear | Open the control center; hidden during prayer mode |
 | MENU, if sent by your remote | Shortcut to the control center |
 
-Open **Control centre → Mosque settings** to adjust details, iqama, and announcements. Choose **Save and apply** to commit the draft. For phone input, open pairing and scan the QR code from a phone on the same trusted local network; the session lasts 15 minutes. [Control-center guide (Arabic)](docs/CONTROL_CENTER_AR.md).
+Open **Control centre → Mosque settings** to adjust details, iqama, and announcements. Choose **Save and apply** to commit the draft. In 2.3.3, pair one phone on staff-only Wi-Fi by scanning the TV’s QR, comparing the codes and approving with the TV remote. The local HTTP session lasts up to 15 minutes. Use the physical remote for sensitive text. [Control-center guide (Arabic)](docs/CONTROL_CENTER_AR.md).
 
 <a id="updates"></a>
 ## Update while keeping settings
 
 Open **Version and updates → Check for an app update**, download the release, and select **Install**. Complete Android's permission and installation prompts if requested. Updating requires a temporary internet connection; local display continues without internet. You can also install the new APK manually over the existing app.
 
-Updates preserve saved mosque details and timetables and do not force first-time setup again. See the [release notes](https://github.com/adel2184/mosque-tv/releases/latest) for changes and the [verification report (Arabic)](android/TEST_REPORT_TV.md) for tested behavior. The published release when this page was prepared is **2.3.2**; improved remote response on a physical TV has not yet been measured for this release.
+Installing 2.3.3 over the previous version preserves saved mosque details and timetables. Local upgrade checks verified stored settings across versions. Menu response was measured in a desktop browser. [Release notes](https://github.com/adel2184/mosque-tv/releases/tag/v2.3.3) · [Verification report (Arabic)](android/TEST_REPORT_TV.md).
 
 <a id="faq"></a>
 ## Frequently asked questions

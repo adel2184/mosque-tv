@@ -52,6 +52,13 @@ final class TvControls {
         }
     }
     boolean open(String key) {
+        if (key == null || key.length() > 24) return false;
+        switch (key) {
+            case "network": case "wifi": case "bluetooth": case "sound": case "audio-output":
+            case "screensaver": case "display": case "power": case "apps": case "app":
+            case "mirror": case "tv": break;
+            default: return false;
+        }
         Intent requested = intent(key);
         if (!resolves(requested) && !"mirror".equals(key)) requested = first(Settings.ACTION_SETTINGS);
         if (requested == null) return false;

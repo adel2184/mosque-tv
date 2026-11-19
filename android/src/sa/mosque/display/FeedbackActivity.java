@@ -49,18 +49,28 @@ public final class FeedbackActivity extends Activity {
         en="en".equals(getSharedPreferences("mosque-tv-setup",MODE_PRIVATE).getString("language","ar"));
         web=new WebView(this);web.setBackgroundColor(Color.rgb(8,15,20));setContentView(web);
         WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(false);
-        settings.setAllowFileAccess(true);settings.setAllowContentAccess(false);settings.setAllowFileAccessFromFileURLs(false);settings.setAllowUniversalAccessFromFileURLs(false);
+        settings.setAllowFileAccess(false);settings.setAllowContentAccess(false);settings.setAllowFileAccessFromFileURLs(false);settings.setAllowUniversalAccessFromFileURLs(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);settings.setJavaScriptCanOpenWindowsAutomatically(false);settings.setSupportMultipleWindows(false);
         settings.setBlockNetworkLoads(true);
         web.addJavascriptInterface(new ReportBridge(),"MosqueReportNative");
         web.setWebViewClient(new WebViewClient(){
+            @Override public boolean onRenderProcessGone(WebView lost, android.webkit.RenderProcessGoneDetail detail) {
+                if (lost != web) return true;
+                localPage = false;
+                cancel();
+                ((android.view.ViewGroup) lost.getParent()).removeView(lost);
+                web = null;
+                lost.destroy();
+                finish();
+                return true;
+            }
             @Override public void onPageStarted(WebView view,String url,android.graphics.Bitmap icon){localPage=false;}
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){return !PAGE.equals(request.getUrl().toString());}
             @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){
                 String value=request.getUrl().toString();if(value.equals(PAGE)||value.matches("file:///android_asset/reports/[A-Za-z0-9_-]+\\.(?:js|css)"))return null;
                 return new WebResourceResponse("text/plain","UTF-8",403,"Blocked",java.util.Collections.emptyMap(),new ByteArrayInputStream(new byte[0]));
             }
-            @Override public void onPageFinished(WebView view,String url){localPage=PAGE.equals(url)&&!released;if(localPage){view.evaluateJavascript("window.dispatchEvent(new CustomEvent('mosque-report-language',{detail:"+JSONObject.quote(en?"en":"ar")+"}));",null);publishInterrupted();}}
+            @Override public void onPageFinished(WebView view,String url){if(view!=web)return;localPage=PAGE.equals(url)&&!released;if(localPage){view.evaluateJavascript("window.dispatchEvent(new CustomEvent('mosque-report-language',{detail:"+JSONObject.quote(en?"en":"ar")+"}));",null);publishInterrupted();}}
         });web.loadUrl(PAGE);
     }
     private boolean allowed(){return foreground&&!released&&localPage&&!prayer&&!MainActivity.prayerActive();}
@@ -114,5 +124,5 @@ public final class FeedbackActivity extends Activity {
     private void publishInterrupted(){if(deliveryUncertain&&allowed()){deliveryUncertain=false;publish(false,"",en?"Delivery was interrupted and is unconfirmed. It will not be retried automatically.":"انقطع تأكيد الإرسال؛ لن يُعاد تلقائيًا، وقد يكون التقرير وصل.");}}
     @Override protected void onResume(){super.onResume();foreground=true;if(prayer||MainActivity.prayerActive())finish();else publishInterrupted();}
     @Override protected void onPause(){cancel();super.onPause();}
-    @Override protected void onDestroy(){released=true;cancel();if(active.get()==this)active.clear();worker.shutdownNow();if(web!=null){web.removeJavascriptInterface("MosqueReportNative");web.destroy();web=null;}super.onDestroy();}
+    @Override protected void onDestroy(){released=true;cancel();if(active.get()==this)active.clear();worker.shutdownNow();if(web!=null){web.removeJavascriptInterface("MosqueReportNative");((android.view.ViewGroup)web.getParent()).removeView(web);web.destroy();web=null;}super.onDestroy();}
 }

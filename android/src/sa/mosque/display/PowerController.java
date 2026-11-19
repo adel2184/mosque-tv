@@ -25,11 +25,10 @@ final class PowerController {
     private volatile long sleepAt;
     private volatile boolean manualBlack;
     private boolean closed;
+    private boolean foreground;
     private boolean prayer;
     private String lastState = "";
-    private final Runnable timer = new Runnable() {
-        @Override public void run() { if (!closed) { apply(); handler.postDelayed(this, 1000); } }
-    };
+    private final Runnable timer = this::apply;
 
     PowerController(Activity activity, FrameLayout frame, Host host) {
         this.activity = activity; this.host = host;
@@ -40,7 +39,6 @@ final class PowerController {
         curtain.setText("خارج ساعات العرض\nاضغط اختيار أو MENU لفتح أدوات الشاشة");
         curtain.setVisibility(View.GONE); curtain.setFocusable(false); curtain.setClickable(false);
         frame.addView(curtain, new FrameLayout.LayoutParams(-1, -1));
-        handler.post(timer);
     }
     static int minute(String value) {
         return PowerRules.minute(value);
@@ -83,7 +81,8 @@ final class PowerController {
     }
     void save(String text) {
         try {
-            JSONObject input = new JSONObject(text == null ? "" : text);
+            if (text == null || text.length() > 256) throw new IllegalArgumentException();
+            JSONObject input = new JSONObject(text);
             String mode = input.getString("mode"), start = input.optString("start", "04:00"), end = input.optString("end", "23:00");
             if (!("always".equals(mode) || "system".equals(mode) || "scheduled".equals(mode))
                     || minute(start) < 0 || minute(end) < 0 || ("scheduled".equals(mode) && start.equals(end))) throw new IllegalArgumentException();
@@ -101,25 +100,41 @@ final class PowerController {
     }
     boolean isBlack() { return curtain.getVisibility() == View.VISIBLE; }
     void prayer(boolean active) { prayer = active; apply(); }
-    void operator() { if (manualBlack) { manualBlack = false; sleepAt = 0; } operatorUntil = SystemClock.elapsedRealtime() + 5 * 60_000L; apply(); }
+    void operator() {
+        if (!manualBlack && !"scheduled".equals(preferences.getString("mode", "always"))) return;
+        if (manualBlack) { manualBlack = false; sleepAt = 0; }
+        operatorUntil = SystemClock.elapsedRealtime() + 5 * 60_000L;
+        apply();
+    }
     void sleep(int minutes) {
         if (minutes != 0 && minutes != 15 && minutes != 30 && minutes != 60 && minutes != 90) return;
         manualBlack = false; sleepAt = minutes == 0 ? 0 : SystemClock.elapsedRealtime() + minutes * 60_000L;
         apply(); host.changed(status());
     }
     void displayOff() { sleepAt = 0; manualBlack = true; operatorUntil = 0; apply(); }
-    void resume() { apply(); }
+    void resume() { foreground = true; apply(); }
+    void pause() { foreground = false; handler.removeCallbacks(timer); }
     private void apply() {
-        if (closed || activity.isFinishing() || activity.isDestroyed()) return;
+        if (closed || !foreground || activity.isFinishing() || activity.isDestroyed()) return;
+        handler.removeCallbacks(timer);
         String mode = preferences.getString("mode", "always");
-        if ("system".equals(mode)) activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        else activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        if (sleepAt > 0 && SystemClock.elapsedRealtime() >= sleepAt) { sleepAt = 0; manualBlack = true; operatorUntil = 0; }
-        boolean black = !prayer && (manualBlack || ("scheduled".equals(mode) && !scheduledNow() && SystemClock.elapsedRealtime() >= operatorUntil));
-        curtain.setText(manualBlack ? "العرض متوقف مؤقتًا\nاضغط أي سهم لاستئنافه، أو اختيار لفتح مركز التحكم" : "خارج ساعات العرض\nاضغط اختيار أو MENU لفتح مركز التحكم");
-        curtain.setVisibility(black ? View.VISIBLE : View.GONE);
+        boolean keepOn = !"system".equals(mode);
+        int flag = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
+        if (keepOn != ((activity.getWindow().getAttributes().flags & flag) != 0)) {
+            if (keepOn) activity.getWindow().addFlags(flag);
+            else activity.getWindow().clearFlags(flag);
+        }
+        long elapsed = SystemClock.elapsedRealtime();
+        if (sleepAt > 0 && elapsed >= sleepAt) { sleepAt = 0; manualBlack = true; operatorUntil = 0; }
+        boolean scheduled = "scheduled".equals(mode);
+        boolean black = !prayer && (manualBlack || (scheduled && !scheduledNow() && elapsed >= operatorUntil));
+        String label = manualBlack ? "العرض متوقف مؤقتًا\nاضغط أي سهم لاستئنافه، أو اختيار لفتح مركز التحكم" : "خارج ساعات العرض\nاضغط اختيار أو MENU لفتح مركز التحكم";
+        if (!label.contentEquals(curtain.getText())) curtain.setText(label);
+        if (black != isBlack()) curtain.setVisibility(black ? View.VISIBLE : View.GONE);
         JSONObject state = status(); String signature = state.toString();
         if (!signature.equals(lastState)) { lastState = signature; host.changed(state); }
+        long delay = PowerRules.nextCheckDelay(scheduled, System.currentTimeMillis(), elapsed, operatorUntil, sleepAt);
+        if (delay != Long.MAX_VALUE) handler.postDelayed(timer, delay);
     }
     void destroy() { closed = true; handler.removeCallbacks(timer); }
 }

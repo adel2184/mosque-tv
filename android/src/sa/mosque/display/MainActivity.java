@@ -74,10 +74,14 @@ public final class MainActivity extends Activity {
     private WebView webView;
     private LinearLayout errorPanel;
     private AlertDialog operatorDialog;
+    private AlertDialog phoneDialog;
+    private long phoneDialogSession;
     private ValueCallback<Uri[]> fileCallback;
     private String pendingExport;
     private boolean exportBusy;
     private boolean mainFrameFailed;
+    private long lastRendererRecovery = -60_000L;
+    private boolean recoverOnResume;
     private boolean menuDown;
     private boolean menuLongHandled;
     private boolean homeRolePending;
@@ -139,6 +143,13 @@ public final class MainActivity extends Activity {
         phone = new LocalPhoneServer(this, new LocalPhoneServer.Host() {
             @Override public void key(String key) { runOnUiThread(() -> phoneKey(key)); }
             @Override public void text(String text) { runOnUiThread(() -> phoneText(text)); }
+            @Override public void confirmPhone(long session, String code) { confirmPhonePairing(session, code); }
+            @Override public void pairingExpired(long session) {
+                if (phoneDialogSession == session && phoneDialog != null && phoneDialog.isShowing()) {
+                    phoneDialog.dismiss();
+                    publishNotice(ui("انتهت مهلة الاقتران. افتح اقتران الجوال للمحاولة مجددًا.", "Pairing timed out. Open phone pairing to try again."));
+                }
+            }
         });
         applyImmersive();
         webView.loadUrl(HOME);
@@ -259,6 +270,26 @@ public final class MainActivity extends Activity {
     }
 
     private final class LocalClient extends WebViewClient {
+        @Override public boolean onRenderProcessGone(WebView lost, android.webkit.RenderProcessGoneDetail detail) {
+            if (lost != webView) return true;
+            FrameLayout frame = (FrameLayout) lost.getParent();
+            frame.removeView(lost);
+            webView = null;
+            lost.destroy();
+            fileCallback = null; // The renderer that owned this callback has exited.
+            dismissOperatorDialog();
+            if (phone != null) phone.stop();
+            long now = android.os.SystemClock.elapsedRealtime();
+            if (now - lastRendererRecovery >= 60_000L) {
+                if (foreground) restoreDisplay(frame);
+                else recoverOnResume = true;
+            } else {
+                showLoadError();
+                errorPanel.getChildAt(1).requestFocus();
+            }
+            return true;
+        }
+
         @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
             return serve(request.getUrl(), request.getMethod());
         }
@@ -271,21 +302,22 @@ public final class MainActivity extends Activity {
         }
         @Override public boolean shouldOverrideUrlLoading(WebView view, String url) { return !localIndex(url); }
         @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+            if (view != webView) return;
             mainFrameFailed = false;
             if (!localIndex(url)) { view.stopLoading(); showLoadError(); }
         }
         @Override public void onPageFinished(WebView view, String url) {
-            if (!mainFrameFailed && localIndex(url)) {
+            if (view == webView && !mainFrameFailed && localIndex(url)) {
                 errorPanel.setVisibility(View.GONE);
                 applyImmersive();
                 dispatchResume();
             }
         }
         @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-            if (request.isForMainFrame()) showLoadError();
+            if (view == webView && request.isForMainFrame()) showLoadError();
         }
         @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse error) {
-            if (request.isForMainFrame() && error.getStatusCode() >= 400) showLoadError();
+            if (view == webView && request.isForMainFrame() && error.getStatusCode() >= 400) showLoadError();
         }
     }
 
@@ -403,7 +435,10 @@ public final class MainActivity extends Activity {
                 if (power != null) power.prayer(active);
                 DeviceSetupActivity.setPrayerActive(active);
                 FeedbackActivity.setPrayerActive(active);
-                if (active) dismissOperatorDialog();
+                if (active) {
+                    if (phone != null) phone.stop();
+                    dismissOperatorDialog();
+                }
                 if (active && speed != null) speed.cancel();
                 if (active && setupFetcher != null) setupFetcher.cancel();
             });
@@ -416,7 +451,7 @@ public final class MainActivity extends Activity {
             }
             final String safeName = safeFilename(filename);
             runOnUiThread(() -> {
-                if (isFinishing() || isDestroyed() || !localIndex(webView.getUrl())) return;
+                if (isFinishing() || isDestroyed() || webView == null || !localIndex(webView.getUrl())) return;
                 if (exportBusy || fileCallback != null) {
                     publishExportResult(false, false, ui("توجد عملية ملفات قيد التنفيذ؛ أكملها أولًا.", "Finish the current file operation first."));
                     return;
@@ -439,7 +474,7 @@ public final class MainActivity extends Activity {
     }
 
     private static String safeFilename(String name) {
-        String safe = name == null ? "mosque-export.json" : name.replaceAll("[^A-Za-z0-9._-]", "_");
+        String safe = name == null || name.length() > 80 ? "mosque-export.json" : name.replaceAll("[^A-Za-z0-9._-]", "_");
         safe = safe.replaceFirst("^\\.+", "");
         if (safe.isEmpty() || safe.length() > 80) safe = "mosque-export.json";
         if (!safe.toLowerCase(Locale.ROOT).endsWith(".json")) safe += ".json";
@@ -517,6 +552,7 @@ public final class MainActivity extends Activity {
         if (!operatorAllowed()) return;
         try {
             String link = phone.start();
+            final long session = phone.session();
             QrCode code = QrCode.encodeText(link, QrCode.Ecc.MEDIUM);
             int scale = 7, border = 4, side = (code.size + border * 2) * scale;
             Bitmap bitmap = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888);
@@ -528,14 +564,42 @@ public final class MainActivity extends Activity {
             int dimension = (int)(260 * getResources().getDisplayMetrics().density);
             view.addView(qr, new LinearLayout.LayoutParams(dimension, dimension));
             TextView description = new TextView(this); description.setGravity(Gravity.CENTER); description.setTextSize(17);
-            description.setText(ui("صِل الجوال والتلفاز بالشبكة المحلية نفسها ثم امسح الرمز.\nلا يحتاج إنترنت. الجلسة 15 دقيقة؛ الرمز خاص بالمشرف.\n",
-                    "Connect the phone and TV to the same local network, then scan the code.\nNo internet is needed. The session lasts 15 minutes; keep the code private to the operator.\n")
+            description.setText(ui("استخدم شبكة المشرفين الخاصة وامسح الرمز خلال دقيقتين. طابق الرقم على الجهازين ثم وافق بريموت التلفاز.\nالاتصال غير مشفّر. تجنّب إدخال أي بيانات حساسة. الجلسة 15 دقيقة.\n",
+                    "Use a private staff network. Scan within two minutes, match the numbers and confirm with the TV remote.\nThe connection is unencrypted. Avoid sensitive text. The session lasts 15 minutes.\n")
                     + link.substring(0, link.indexOf('#')));
             view.addView(description);
-            showOperatorDialog(new AlertDialog.Builder(this).setTitle(ui("التحكم من الجوال", "Phone remote")).setView(view)
-                    .setPositiveButton(ui("متابعة العرض", "Continue display"), null)
-                    .setNegativeButton(ui("إيقاف الاقتران", "Stop pairing"), (dialog, which) -> phone.stop()).create());
-        } catch (Exception error) { publishNotice(ui("تعذر بدء اقتران الجوال. صِل الجهازين بشبكة محلية واحدة؛ لا يلزم إنترنت.", "Phone pairing could not be started. Connect both devices to the same local network; no internet is needed.")); }
+            showPhoneDialog(session, new AlertDialog.Builder(this).setTitle(ui("التحكم من الجوال", "Phone remote")).setView(view)
+                    .setOnCancelListener(dialog -> phone.stop(session))
+                    .setNegativeButton(ui("إيقاف الاقتران", "Stop pairing"), (dialog, which) -> phone.stop(session)).create());
+        } catch (Exception error) {
+            phone.stop();
+            publishNotice(ui("تعذر بدء اقتران الجوال. صِل الجهازين بشبكة محلية واحدة؛ لا يلزم إنترنت.", "Phone pairing could not be started. Connect both devices to the same local network; no internet is needed."));
+        }
+    }
+    private void showPhoneDialog(long session, AlertDialog dialog) {
+        dismissOperatorDialog();
+        phoneDialogSession = session;
+        phoneDialog = dialog;
+        showOperatorDialog(dialog);
+    }
+    private void confirmPhonePairing(long session, String code) {
+        if (!phone.waiting(session)) return;
+        if (!operatorAllowed() || operatorDialog == null || operatorDialog != phoneDialog || phoneDialogSession != session) {
+            phone.stop(session);
+            return;
+        }
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(ui("تأكيد الجوال", "Confirm phone"))
+                .setMessage(ui("طابق هذا الرقم مع الرقم على جوال المشرف قبل السماح بالتحكم:", "Check this number against the operator's phone before allowing control:") + "\n\n" + code)
+                .setOnCancelListener(unused -> phone.stop(session))
+                .setNegativeButton(ui("رفض", "Reject"), (unused, which) -> phone.stop(session))
+                .setPositiveButton(ui("الرقم مطابق", "Numbers match"), (unused, which) -> {
+                    if (operatorAllowed() && phone.approve(session)) {
+                        publishNotice(ui("تم اقتران جوال المشرف.", "Operator phone paired."));
+                    } else phone.stop(session);
+                }).create();
+        showPhoneDialog(session, dialog);
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).requestFocus();
     }
     private void phoneKey(String key) {
         if (!foreground || praying || webView == null) return;
@@ -632,7 +696,7 @@ public final class MainActivity extends Activity {
     }
 
     private boolean homeOperatorActionAllowed() {
-        return webView != null && !isFinishing() && !isDestroyed() && !praying
+        return foreground && webView != null && !isFinishing() && !isDestroyed() && !praying
                 && localIndex(webView.getUrl()) && fileCallback == null && !exportBusy
                 && !homeRolePending && !settingsScreenPending;
     }
@@ -709,7 +773,10 @@ public final class MainActivity extends Activity {
     private void showOperatorDialog(AlertDialog dialog) {
         if (praying || isFinishing() || isDestroyed()) return;
         operatorDialog = dialog;
-        dialog.setOnDismissListener(unused -> { if (operatorDialog == dialog) operatorDialog = null; });
+        dialog.setOnDismissListener(unused -> {
+            if (operatorDialog == dialog) operatorDialog = null;
+            if (phoneDialog == dialog) phoneDialog = null;
+        });
         dialog.show();
         if (dialog.getWindow() != null) dialog.getWindow().getDecorView().setLayoutDirection(
                 "en".equals(getSharedPreferences("mosque-tv-setup", 0).getString("language", "ar"))
@@ -721,6 +788,7 @@ public final class MainActivity extends Activity {
     }
 
     @Override public void onBackPressed() {
+        if (webView == null) { super.onBackPressed(); return; }
         if (praying) return;
         webView.evaluateJavascript("(function(){if(document.body&&document.body.classList.contains('praying'))return 'prayer';"
                 + "if(window.MosqueSetup&&window.MosqueSetup.isOpen()&&window.MosqueSetup.handleBack())return 'setup';"
@@ -797,6 +865,17 @@ public final class MainActivity extends Activity {
                 + "if(window.MosqueControl)window.MosqueControl.open();})()");
     }
 
+    private void restoreDisplay(FrameLayout frame) {
+        if (isFinishing() || isDestroyed()) return;
+        if (webView == null) {
+            lastRendererRecovery = android.os.SystemClock.elapsedRealtime();
+            webView = new WebView(this);
+            frame.addView(webView, 0, new FrameLayout.LayoutParams(-1, -1));
+            configureWebView();
+        }
+        webView.loadUrl(HOME);
+        webView.requestFocus();
+    }
     private void createErrorPanel(FrameLayout frame) {
         errorPanel = new LinearLayout(this);
         errorPanel.setOrientation(LinearLayout.VERTICAL); errorPanel.setGravity(Gravity.CENTER);
@@ -806,7 +885,7 @@ public final class MainActivity extends Activity {
         text.setText("تعذر فتح شاشة الجامع المحلية.\nأعد المحاولة، أو أعد تثبيت ملف التطبيق الكامل مع الاحتفاظ بنسخة الإعدادات.");
         text.setTextColor(Color.rgb(190, 198, 190)); text.setTextSize(24); text.setGravity(Gravity.CENTER);
         Button retry = new Button(this); retry.setText("إعادة المحاولة");
-        retry.setOnClickListener(view -> { errorPanel.setVisibility(View.GONE); webView.loadUrl(HOME); });
+        retry.setOnClickListener(view -> { errorPanel.setVisibility(View.GONE); restoreDisplay(frame); });
         errorPanel.addView(text); errorPanel.addView(retry);
         frame.addView(errorPanel, new FrameLayout.LayoutParams(-1, -1));
     }
@@ -833,16 +912,22 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onResume() {
         super.onResume(); foreground = true; applyImmersive(); settingsScreenPending = false;
+        if (recoverOnResume) {
+            recoverOnResume = false;
+            restoreDisplay((FrameLayout) errorPanel.getParent());
+        }
         if (power != null) power.resume();
         if (updater != null) updater.onResume();
         if (webView != null) { webView.onResume(); dispatchResume(); publishHomeResult(); }
     }
     @Override protected void onPause() {
         foreground = false;
+        if (phone != null) phone.stop();
         wakingKey = -1;
         menuDown = false; handler.removeCallbacks(menuLongPress); dismissOperatorDialog();
         if (speed != null) speed.cancel();
         if (setupFetcher != null) setupFetcher.cancel();
+        if (power != null) power.pause();
         if (webView != null) webView.onPause();
         super.onPause();
     }
@@ -863,6 +948,7 @@ public final class MainActivity extends Activity {
         if (fileCallback != null) { fileCallback.onReceiveValue(null); fileCallback = null; }
         if (webView != null) {
             webView.removeJavascriptInterface("MosqueAndroid"); webView.stopLoading();
+            ((android.view.ViewGroup) webView.getParent()).removeView(webView);
             webView.destroy(); webView = null;
         }
         fileWriter.shutdown(); super.onDestroy();

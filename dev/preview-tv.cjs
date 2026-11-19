@@ -1,6 +1,7 @@
 /* Development-only, read-only localhost preview. Never included in the APK runtime. */
 'use strict';
 const http=require('node:http'),fs=require('node:fs'),path=require('node:path');
+const previewFile=require('./preview-file.cjs');
 const root=path.resolve(__dirname,'..');
 const mock=`<script id="tv-preview-native-mock">
 window.MosqueAndroid={
@@ -16,9 +17,9 @@ window.MosqueAndroid={
 </script>`;
 const server=http.createServer((request,response)=>{
   if(!['GET','HEAD'].includes(request.method)){response.writeHead(405);return response.end();}
-  let file;try{const url=new URL(request.url,'http://127.0.0.1');file=path.resolve(root,'.'+decodeURIComponent(url.pathname==='/'?'/index.html':url.pathname));if(!file.startsWith(root+path.sep))throw Error('path');}catch(_){response.writeHead(400);return response.end();}
-  if(!fs.existsSync(file)||!fs.statSync(file).isFile()){response.writeHead(404);return response.end('Not found');}
-  const type={'.html':'text/html; charset=utf-8','.jpg':'image/jpeg','.png':'image/png','.svg':'image/svg+xml','.woff2':'font/woff2','.json':'application/json'}[path.extname(file)]||'text/plain; charset=utf-8';
+  const file=previewFile(request);
+  if(!file){response.writeHead(404);return response.end('Not found');}
+  const type={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.jpg':'image/jpeg','.png':'image/png','.svg':'image/svg+xml','.woff2':'font/woff2','.json':'application/json'}[path.extname(file)]||'text/plain; charset=utf-8';
   let body=fs.readFileSync(file);
   if(file===path.join(root,'index.html')){
     let html=body.toString('utf8');

@@ -52,6 +52,27 @@ test('New York reconfiguration uses its selected clock/date style/absolute event
 test('An independently selected timezone override survives validation, commit, and reload',()=>{
   const profile={...cairo,timezone:'Asia/Kolkata',hourFormat:24,dateStyle:'both'},app=runtime();app.window.MosqueInstall.commit(profile,table(profile));const loaded=runtime({storage:app.storage});eq(loaded.window.MosqueInstall.getContext().profile.timezone,'Asia/Kolkata');eq(loaded.document.getElementById('clockTime').textContent,'11:45:00');eq(loaded.document.getElementById('clockPeriod').textContent,'');eq(loaded.document.getElementById('hijriDate').hidden,false);eq(loaded.document.getElementById('gregorianDate').hidden,false);
 });
+test('A legacy authority timetable can be imported by catalog city name and its installed free-form label survives an upgrade',()=>{
+  const app=runtime(),raw=table(cairo);
+  raw.metadata.verificationStatus='authority-supplied-unverified';
+  delete raw.metadata.countryId;
+  delete raw.metadata.cityId;
+  raw.metadata.city=' cairo ';
+  app.window.MosqueInstall.commit(cairo,raw);
+  const installed=JSON.parse(app.storage.get(INSTALL));
+  installed.timetable.metadata.city='Local district prayer authority';
+  app.storage.set(INSTALL,JSON.stringify(installed));
+  const loaded=runtime({storage:app.storage});
+  eq(loaded.window.MosqueInstall.getContext().hasInstallation,true);
+  eq(loaded.api.database.metadata.city,installed.timetable.metadata.city);
+  eq(loaded.writes.length,0);
+  rejects(()=>loaded.api.validateTimetable(installed.timetable));
+  for(const mismatched of [{countryId:'US'},{cityId:newYork.cityId}]){
+    const candidate=clone(raw);
+    Object.assign(candidate.metadata,mismatched);
+    rejects(()=>loaded.api.validateTimetable(candidate));
+  }
+});
 for(const [name,mutate]of [
   ['wrong timezone',value=>value.metadata.timezone='UTC'],
   ['wrong coordinates',value=>value.metadata.coordinates.latitude+=1],

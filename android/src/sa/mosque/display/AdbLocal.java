@@ -16,8 +16,7 @@ import java.security.GeneralSecurityException;
 import java.security.KeyPair;
 import java.security.PrivateKey;
 import java.security.interfaces.RSAPublicKey;
-import java.util.Arrays;
-import javax.crypto.Cipher;
+import java.security.Signature;
 
 /** Original, bounded classic ADB transport. Protocol: AOSP adb/protocol.txt.
  * Only loopback is reachable; no discovery, remote hosts, TLS pairing, or shell UI. */
@@ -111,9 +110,14 @@ final class AdbLocal implements Closeable {
     static byte[] signToken(PrivateKey key,byte[] token)throws IOException{
         if(token.length!=20)throw new IOException("تحدي مصادقة ADB غير متوافق.");
         byte[] prefix={0x30,0x21,0x30,0x09,0x06,0x05,0x2b,0x0e,0x03,0x02,0x1a,0x05,0x00,0x04,0x14};
-        byte[] block=new byte[256];block[1]=1;int start=block.length-prefix.length-token.length;
-        Arrays.fill(block,2,start-1,(byte)0xff);System.arraycopy(prefix,0,block,start,prefix.length);System.arraycopy(token,0,block,start+prefix.length,token.length);
-        try{Cipher cipher=Cipher.getInstance("RSA/ECB/NoPadding");cipher.init(Cipher.ENCRYPT_MODE,key);return cipher.doFinal(block);}
+        try {
+            // Classic ADB supplies the SHA-1 digest. Sign its DigestInfo directly.
+            Signature signature = Signature.getInstance("NONEwithRSA");
+            signature.initSign(key);
+            signature.update(prefix);
+            signature.update(token);
+            return signature.sign();
+        }
         catch(GeneralSecurityException error){throw new IOException("تعذر توقيع مصادقة ADB.",error);}
     }
     static byte[] publicKeyBytes(RSAPublicKey key){

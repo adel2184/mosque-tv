@@ -8,6 +8,7 @@ const path=require('node:path');
 const http=require('node:http');
 const {chromium}=require('playwright');
 const sharp=require('sharp');
+const previewFile=require('./preview-file.cjs');
 const root=path.resolve(__dirname,'..');
 const output=path.join(root,'docs','images');
 const read=file=>fs.readFileSync(path.join(root,file),'utf8');
@@ -36,9 +37,8 @@ html=html.replace('<script id="application-code">',mock+'<script>'+bridge+'</scr
 const server=http.createServer((request,response)=>{
  try{
   if(!['GET','HEAD'].includes(request.method)){response.writeHead(405);return response.end();}
-  const url=new URL(request.url,'http://127.0.0.1');
-  const target=path.resolve(root,'.'+decodeURIComponent(url.pathname==='/'?'/index.html':url.pathname));
-  if(!target.startsWith(root+path.sep)||!fs.existsSync(target)||!fs.statSync(target).isFile()){response.writeHead(404);return response.end();}
+  const target=previewFile(request);
+  if(!target){response.writeHead(404);return response.end();}
   const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.woff2':'font/woff2','.json':'application/json'};
   response.writeHead(200,{'Content-Type':types[path.extname(target)]||'application/octet-stream','Cache-Control':'no-store'});
   response.end(request.method==='HEAD'?undefined:target===path.join(root,'index.html')?html:fs.readFileSync(target));

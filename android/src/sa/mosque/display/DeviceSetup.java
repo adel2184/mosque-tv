@@ -13,7 +13,6 @@ import android.util.AtomicFile;
 import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -205,14 +204,26 @@ final class DeviceSetup {
     private KeyPair keyPair()throws IOException{
         AtomicFile file=new AtomicFile(new File(context.getFilesDir(),"local-adb-private.pk8"));
         try{
-            KeyFactory factory=KeyFactory.getInstance("RSA");
-            if(file.getBaseFile().exists())try(InputStream input=file.openRead()){
+            // Keep the previously authorized identity on existing installations.
+            if(file.getBaseFile().exists() || new File(file.getBaseFile().getPath()+".bak").exists())try(InputStream input=file.openRead()){
+                KeyFactory factory=KeyFactory.getInstance("RSA");
                 RSAPrivateCrtKey key=(RSAPrivateCrtKey)factory.generatePrivate(new PKCS8EncodedKeySpec(read(input,8192)));
                 return new KeyPair(factory.generatePublic(new RSAPublicKeySpec(key.getModulus(),key.getPublicExponent())),key);
             }
-            KeyPairGenerator generator=KeyPairGenerator.getInstance("RSA");generator.initialize(2048);KeyPair pair=generator.generateKeyPair();
-            FileOutputStream output=null;try{output=file.startWrite();output.write(pair.getPrivate().getEncoded());file.finishWrite(output);}catch(IOException error){if(output!=null)file.failWrite(output);throw error;}
-            return pair;
+            String alias = "mosque-display-local-adb";
+            java.security.KeyStore store = java.security.KeyStore.getInstance("AndroidKeyStore");
+            store.load(null);
+            if (!store.containsAlias(alias)) {
+                KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA", "AndroidKeyStore");
+                generator.initialize(new android.security.keystore.KeyGenParameterSpec.Builder(alias,
+                        android.security.keystore.KeyProperties.PURPOSE_SIGN)
+                        .setKeySize(2048)
+                        .setDigests(android.security.keystore.KeyProperties.DIGEST_NONE)
+                        .setSignaturePaddings(android.security.keystore.KeyProperties.SIGNATURE_PADDING_RSA_PKCS1)
+                        .build());
+                generator.generateKeyPair();
+            }
+            return new KeyPair(store.getCertificate(alias).getPublicKey(), (java.security.PrivateKey)store.getKey(alias, null));
         }catch(Exception error){throw new IOException("تعذر إنشاء مفتاح ADB الخاص داخل بيانات التطبيق.",error);}
     }
     static String systemInfo(Context context){
