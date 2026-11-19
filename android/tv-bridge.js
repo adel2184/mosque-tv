@@ -133,6 +133,13 @@
   window.addEventListener('mosque-native-home-result', refreshHomeStatus);
   // Small native-only adapters. Mosque data still uses the app's versioned JSON draft.
   var powerDraft = null;
+  var nativeSectionTitles = {
+    'tv-home':'بدء التشغيل مع التلفاز',
+    'tv-system':'الجهاز والاتصالات',
+    'tv-power':'الطاقة وجدول العرض',
+    'tv-update':'الإصدار والتحديث',
+    'tv-device-setup':'تهيئة التلفاز'
+  };
   function homeMessage(state, fallback) {
     return typeof state.message === 'string' && state.message.trim() ? state.message.slice(0, 500) : fallback;
   }
@@ -162,7 +169,10 @@
       if (!Object.prototype.hasOwnProperty.call(map,id)) throw Error('اختصار غير معروف.');
       return invoke('openControl',map[id]);
     },
-    getSections: function () {
+    getSections: function (titlesOnly) {
+      if (titlesOnly) return Object.keys(nativeSectionTitles).map(function (id) {
+        return {id:id, title:nativeSectionTitles[id], rows:[]};
+      });
       var home = readState('homeStatus', {}), power = readState('powerStatus', {}), update = readState('updateStatus', {}), device = readState('deviceStatus', {});
       var validHome = typeof home.isDefaultHome === 'boolean' && typeof home.canRequestHomeRole === 'boolean' && typeof home.canOpenHomeSettings === 'boolean';
       var homeText = !validHome ? 'تعذر قراءة إعداد واجهة البدء.' : home.isDefaultHome ? 'التطبيق هو واجهة البدء الافتراضية.' : 'التطبيق ليس واجهة البدء الافتراضية.';
@@ -179,11 +189,11 @@
       var check = nativeAction('tv-update-check','البحث عن تحديث التطبيق','checkUpdate',undefined,'يحتاج اتصالًا عند البحث فقط؛ يستمر العرض المحلي دون اتصال.');check.disabled=!update.supported||!update.configured;
       var install = nativeAction('tv-update-install','تنزيل التحديث وتثبيته','installUpdate');install.disabled=!update.supported||!update.configured||!update.availableVersion;
       return [
-        {id:'tv-home',title:'بدء التشغيل مع التلفاز',help:'اختيار HOME إعداد نظام مستقل عن مسودة بيانات الجامع، ويغيّر وظيفة زر Home. لا يعطل مشغّل TCL الأصلي.',rows:[{id:'tv-home-status',label:'الحالة الحالية',kind:'info',value:homeText},request,nativeAction('tv-change-home','تغيير واجهة البدء','openHomeSettings'),nativeAction('tv-system-settings','إعدادات التلفزيون','openSystemSettings')]},
-        {id:'tv-system',title:'الجهاز والاتصالات',help:device.message||'تفتح هذه الخيارات صفحات النظام المتاحة في طرازك. الرجوع يعيدك إلى شاشة الجامع.',rows:systemRows},
-        {id:'tv-power',title:'الطاقة وجدول العرض',help:(power.message||'')+'\nهذه إعدادات جهاز مستقلة. غيّر الحقول ثم اختر «حفظ إعداد الطاقة الآن». الجدول يعتم العرض داخل التطبيق؛ لا يعد بإطفاء التلفاز كهربائيًا أو إيقاظه من الاستعداد.',rows:[{id:'tv-power-status',label:'حالة الطاقة',kind:'info',value:power.screenBlack?'العرض معتم الآن':power.active?'العرض نشط':'حسب إعداد النظام'},mode,start,end,savePower]},
-        {id:'tv-update',title:'الإصدار والتحديث',help:'فحص التحديث اختياري. التثبيت يحتاج موافقتك في نافذة Android؛ لا يغيّر التطبيق نفسه بصمت.',rows:[{id:'tv-update-status',label:'الإصدار والحالة',kind:'info',value:(update.installedVersion||'غير محدد')+' — '+(update.message||'خدمة التحديث غير مهيأة')+(typeof update.progress==='number'&&update.progress>0?' — '+update.progress+'%':'')},check,install,nativeAction('tv-update-cancel','إلغاء مهمة التحديث','cancelUpdate')]},
-        {id:'tv-device-setup',title:'تهيئة التلفاز',help:'تعرض خطة إعداد الجهاز قبل أي تغيير. إعدادات الجامع والمواقيت مستقلة عنها.',rows:[nativeAction('tv-device-setup-open','فتح تهيئة التلفاز','deviceSetup')]}
+        {id:'tv-home',title:nativeSectionTitles['tv-home'],help:'اختيار HOME إعداد نظام مستقل عن مسودة بيانات الجامع، ويغيّر وظيفة زر Home. لا يعطل مشغّل TCL الأصلي.',rows:[{id:'tv-home-status',label:'الحالة الحالية',kind:'info',value:homeText},request,nativeAction('tv-change-home','تغيير واجهة البدء','openHomeSettings'),nativeAction('tv-system-settings','إعدادات التلفزيون','openSystemSettings')]},
+        {id:'tv-system',title:nativeSectionTitles['tv-system'],help:device.message||'تفتح هذه الخيارات صفحات النظام المتاحة في طرازك. الرجوع يعيدك إلى شاشة الجامع.',rows:systemRows},
+        {id:'tv-power',title:nativeSectionTitles['tv-power'],help:(power.message||'')+'\nهذه إعدادات جهاز مستقلة. غيّر الحقول ثم اختر «حفظ إعداد الطاقة الآن». الجدول يعتم العرض داخل التطبيق؛ لا يعد بإطفاء التلفاز كهربائيًا أو إيقاظه من الاستعداد.',rows:[{id:'tv-power-status',label:'حالة الطاقة',kind:'info',value:power.screenBlack?'العرض معتم الآن':power.active?'العرض نشط':'حسب إعداد النظام'},mode,start,end,savePower]},
+        {id:'tv-update',title:nativeSectionTitles['tv-update'],help:'فحص التحديث اختياري. التثبيت يحتاج موافقتك في نافذة Android؛ لا يغيّر التطبيق نفسه بصمت.',rows:[{id:'tv-update-status',label:'الإصدار والحالة',kind:'info',value:(update.installedVersion||'غير محدد')+' — '+(update.message||'خدمة التحديث غير مهيأة')+(typeof update.progress==='number'&&update.progress>0?' — '+update.progress+'%':'')},check,install,nativeAction('tv-update-cancel','إلغاء مهمة التحديث','cancelUpdate')]},
+        {id:'tv-device-setup',title:nativeSectionTitles['tv-device-setup'],help:'تعرض خطة إعداد الجهاز قبل أي تغيير. إعدادات الجامع والمواقيت مستقلة عنها.',rows:[nativeAction('tv-device-setup-open','فتح تهيئة التلفاز','deviceSetup')]}
       ];
     }
   };

@@ -50,10 +50,14 @@ Before leaving the display in use:
 
 The donation card starts hidden on a fresh install. Configure it and explicitly enable it if needed. Updating preserves an existing campaign and its visibility.
 
+## Prayer display settings
+
+Open **Control centre → Mosque settings → Display and digits**. The silent phone reminder starts enabled. Post-prayer adhkar run for five minutes by default, with Off, 3, 5 and 7 available. Select **Save and apply**. A saved 2.3.3 installation or settings JSON receives these defaults and keeps its timetable. Friday follows the mosque’s local date and Friday Dhuhr entry. Ramadan follows the bundled Umm al-Qura month and the saved Fajr and Maghrib times.
+
 ## Useful distinctions
 
 - The bundled civil Umm al-Qura calendar covers **1924-08-01 to 2077-11-16**. This is calendar coverage; setup prepares prayer times only for the current and following year. Hijri date changes at midnight in the selected time zone.
-- The app is silent. At iqama it shows a black prayer screen with **أقيموا صفوفكم** (“Straighten your rows”), then returns automatically after the configured duration.
+- The app is silent. At iqama it shows a black prayer screen with **أقيموا صفوفكم** (“Straighten your rows”). When prayer mode ends, the selected adhkar cards run before the dashboard returns with the exit dua. Choosing **Off** skips straight to the dashboard.
 - Display schedules and the display timer show black inside the app; they do not switch off the TV panel. Auto-start after reboot or power loss depends on the TV.
 - On staff-only Wi-Fi, scan the TV’s pairing QR, compare the code on both screens and approve it with the TV remote. One phone is authorized for up to 15 minutes. The local HTTP link is unencrypted. Use the physical remote on guest Wi-Fi and for sensitive text.
 - Daily display remains local. Internet is needed only for online actions such as updates, UmmahAPI downloads, speed tests, or confirmed problem reports.

@@ -171,6 +171,17 @@ test('Status summaries render literal bounded text and refresh availability with
   eq(app.get('cc-row-sound').disabled,true);const summary=app.get('cc-row-network').querySelector('.cc-row-summary');eq(summary.children.length,0);eq(summary.textContent.length,140);assert(summary.textContent.includes('<img'));
   app.window.MosqueTVNative.controlStatus=()=>({available:{sound:true},rows:{network:'متصل'}});app.center.refreshNative();app.flush();eq(app.get('cc-row-sound').disabled,false);eq(app.get('cc-row-network').querySelector('.cc-row-summary').textContent,'متصل');eq(app.calls.length,0);
 });
+test('Reopening uses the same buttons only while rows, language and native state still match',()=>{
+  const status={rows:{network:'Wi-Fi'},available:{sound:true}};
+  const app=runtime({status});app.open();
+  const first=app.get('cc-row-network');app.event('mosque-native-notice',{message:'Temporary notice'});app.back();app.open();
+  assert(app.get('cc-row-network')===first,'Rebuilt identical main controls');
+  assert(!app.get('ccMessage').textContent,'Retained an obsolete notice');
+  app.back();status.available.sound=false;app.open();
+  assert(app.get('cc-row-network')!==first&&app.get('cc-row-sound').disabled,'Native change was missed while closed');
+  const second=app.get('cc-row-network');app.back();app.window.MosqueLocale={language:'en',t:s=>s};app.open();
+  assert(app.get('cc-row-network')!==second,'Reused prior language while closed');
+});
 test('Unchanged native notifications preserve existing controls and focus, while changed summaries and availability refresh',()=>{
   const app=runtime();let reads=0,status={device:'fixture',rows:{network:'Wi-Fi',sound:'Ready'},available:{sound:true},message:'Local'};
   app.window.MosqueTVNative.controlStatus=()=>{reads++;return status;};app.open();eq(reads,1);

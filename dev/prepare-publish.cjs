@@ -11,6 +11,7 @@ for(const file of tracked.split('\0'))if(file&&!excluded.test(file)&&fs.existsSy
 // These named public additions are also needed when preparing a working-tree export before a commit.
 const publicAdditions=['docs/DEVELOPMENT.md','docs/SETUP_EN.md','docs/PROJECT_NOTES_AR.md',
   'dev/capture-readme.cjs','dev/preview-file.cjs',
+  'dev/prayer-context.js','dev/prayer-display.css','dev/test-prayer-context.cjs',
   'android/src/sa/mosque/display/PhoneApproval.java','android/tests/PhoneApprovalTest.java',
   'android/test-phone-pairing.cjs','android/test-phone-client.cjs',
   ...['display-ar','display-en','prayer-mode','setup-ar','control-center-ar'].map(name=>'docs/images/'+name+'.webp')];

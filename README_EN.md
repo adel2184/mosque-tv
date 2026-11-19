@@ -32,13 +32,24 @@ Mosque TV turns a compatible **Android TV or Google TV** into a mosque display w
 | On the display | For the administrator |
 | --- | --- |
 | Prayer times, followed by adhan and iqama countdowns | Six-step setup in Arabic or English |
-| Black prayer screen with “Straighten your rows” in Arabic, then automatic return | Custom iqama and Friday schedules and prayer-mode duration |
-| Clock, Hijri date, and Gregorian date | Mosque details, announcements, and extra text fields |
+| Mosque entrance dua, silent phone reminder, prayer screen, post-prayer adhkar and exit dua | Custom iqama times, Friday schedule and reminder settings |
+| Clock, Hijri and Gregorian dates, Friday reminders and Ramadan countdown | Mosque details, announcements and extra text fields |
 | 18 Arabic adhkar and religious texts | Optional donation card and QR image; hidden on a fresh install |
 | Local display with no in-app advertising | JSON settings and timetable import and export |
 | Offline catalog of 244 countries and territories and 34,247 cities | Remote-friendly control center and temporary phone pairing on your LAN |
 
 Additional tools include display schedules, TV settings shortcuts, optional device preparation, updates, and problem reports initiated by the administrator. System features depend on your TV and its permissions. See the [TV guide (Arabic)](android/README_TV_AR.md).
+
+### The prayer display in 2.4.0
+
+1. From adhan to iqama the display highlights the mosque entrance dua. A phone reminder appears during the final two minutes and the first ten seconds of “Straighten your rows.”
+2. When prayer mode ends, large Arabic adhkar cards take over for five minutes by default. Choose Off, 3, 5 or 7 minutes.
+3. The clock and timetable return with the exit dua and a reminder to leave quietly and check belongings for ten minutes. With the adhkar screen off, these ten minutes start at the end of prayer mode. The next adhan takes precedence whenever it begins.
+4. On Friday, reminders to read Surah Al-Kahf and send blessings upon the Prophet ﷺ run from Fajr until the timetable’s Friday Dhuhr adhan. The reminder to listen then lasts through Friday prayer mode. During Ramadan, a second countdown targets Maghrib for iftar by day and Fajr for imsak by night. After the final Ramadan sunset, the label reads “Fajr”. The bundled Umm al-Qura calendar follows the mosque’s local civil date.
+
+Both settings are in **Control centre → Mosque settings → Display and digits**. The phone reminder is on by default. The saved timetable, mosque time zone, device clock and bundled religious texts supply the whole sequence offline. Titles and instructions follow the chosen language. The duas and adhkar stay in Arabic.
+
+Sources for the entrance and exit duas, the prayers after salām, the count of 33 and Ayat al-Kursi are available for reference. [Sahih Muslim 713a](https://sunnah.com/muslim:713a) · [591](https://sunnah.com/muslim:591) · [597a](https://sunnah.com/muslim:597a) · [Qur’an 2:255](https://quran.com/2/255)
 
 <a id="screenshots"></a>
 ## Screenshots
@@ -70,7 +81,7 @@ These are browser previews of the actual 2.3.2 source UI using demonstration dat
 
 **Using a USB drive or file transfer:**
 
-1. Download **`mosque-display-tv.apk`** from the [official release page](https://github.com/adel2184/mosque-tv/releases/latest).
+1. Download **`mosque-display-tv.apk`** from the [official release page](https://github.com/adel2184/mosque-tv/releases/latest), or use a local release APK signed with the application’s original certificate.
 2. Copy the APK to a USB drive and open it on the TV with a file manager that supports APK installation. You can also use a file-transfer method you trust.
 3. If Android asks, allow installation from the file manager you are using and complete the system installation dialog.
 4. On an existing installation, choose **Update** and keep the app and its data in place. For a first installation, open **شاشة الجامع / Mosque TV** from the apps list and complete setup below. You can then remove the USB drive.
@@ -114,7 +125,7 @@ Open **Control centre → Mosque settings** to adjust details, iqama, and announ
 
 Open **Version and updates → Check for an app update**, download the release, and select **Install**. Complete Android's permission and installation prompts if requested. Updating requires a temporary internet connection; local display continues without internet. You can also install the new APK manually over the existing app.
 
-Installing 2.3.3 over the previous version preserves saved mosque details and timetables. Local upgrade checks verified stored settings across versions. Menu response was measured in a desktop browser. [Release notes](https://github.com/adel2184/mosque-tv/releases/tag/v2.3.3) · [Verification report (Arabic)](android/TEST_REPORT_TV.md).
+Installing an update over the existing app keeps the mosque profile and timetable. Version 2.4.0 reads older settings backups and supplies defaults for the two new options. The published 2.3.3 release is available through the updater. Version 2.4.0 will appear there once published. [Releases](https://github.com/adel2184/mosque-tv/releases/latest) · [Verification report (Arabic)](android/TEST_REPORT_TV.md)
 
 <a id="faq"></a>
 ## Frequently asked questions

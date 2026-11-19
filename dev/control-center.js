@@ -57,7 +57,7 @@
   // Compare only values rendered by this panel, independent of native object key order.
   function statusSignature(){
     const device=typeof nativeStatus.device==='string'?nativeStatus.device:nativeStatus.device&&typeof nativeStatus.device.model==='string'?nativeStatus.device.model:'شاشة الجامع';
-    return JSON.stringify([device,QUICK.map(row=>available(row.id)),CATALOG.map(row=>[available(row.id),summary(row)]),Boolean(nativeStatus.screensaverAvailable===true||nativeStatus.available&&nativeStatus.available.screensaver===true),tx(storageNote||nativeStatus.message||'')]);
+    return JSON.stringify([window.MosqueLocale?.language,config.rows,device,QUICK.map(row=>available(row.id)),CATALOG.map(row=>[available(row.id),summary(row)]),Boolean(nativeStatus.screensaverAvailable===true||nativeStatus.available&&nativeStatus.available.screensaver===true),tx(storageNote||nativeStatus.message||'')]);
   }
   const PATHS={
     bluetooth:'M10 3l8 7-6 4 6 4-8 7V3M5 8l12 12M5 20L17 8',
@@ -136,7 +136,13 @@
     if(prayerActive())return false;
     build();if(closeTimer)clearTimeout(closeTimer);
     if(!opened)returnFocus=document.activeElement;
-    opened=true;if(!document.body.classList.contains('controls-open'))document.body.classList.add('controls-open');nativeStatus=readNative();lastStatusSignature=statusSignature();main();overlay.hidden=false;overlay.setAttribute('aria-hidden','false');
+    opened=true;if(!document.body.classList.contains('controls-open'))document.body.classList.add('controls-open');
+    nativeStatus=readNative();
+    const signature=statusSignature();
+    if(content.id!=='ccRows'||signature!==lastStatusSignature)main();
+    else if(messageNode.textContent!==tx(storageNote||nativeStatus.message||''))statusMessage(storageNote||nativeStatus.message||'');
+    lastStatusSignature=signature;
+    overlay.hidden=false;overlay.setAttribute('aria-hidden','false');
     const reveal=()=>{if(opened)overlay.classList.add('is-open');};if(typeof requestAnimationFrame==='function')requestAnimationFrame(reveal);else reveal();
     if(!focus(config.lastId)){const first=allMain()[0];if(first)focus(first.id);}return true;
   }

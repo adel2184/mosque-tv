@@ -15,7 +15,8 @@ const rejects=fn=>{let error;try{fn();}catch(value){error=value;}assert(error,'I
 function test(name,fn){try{fn();checks.push({name,pass:true});}catch(error){checks.push({name,pass:false,error:error.stack});}}
 const embeddedFiles={'config-data':'dev/config.json','calendar-data':'data/calendar.json','setup-calendar-data':'data/setup-calendar.json','calendar-fixtures':'data/calendar-fixtures.json','prayer-data':'data/timetable.json','slides-data':'dev/slides.json','display-content-data':'dev/display-content.json'};
 const embedded=Object.entries(embeddedFiles).map(([id,file])=>'<script id="'+id+'" type="application/json">'+fs.readFileSync(path.join(root,file),'utf8')+'</script>').join('\n');
-const actualHTML=fs.readFileSync(path.join(__dirname,'shell.html'),'utf8').replace('<!--EMBEDDED_DATA-->',()=>embedded).replace('<!--APPLICATION_SCRIPT-->',()=>'<script>'+appSource+'</script>');
+const contextSource=fs.readFileSync(path.join(__dirname,'prayer-context.js'),'utf8');
+const actualHTML=fs.readFileSync(path.join(__dirname,'shell.html'),'utf8').replace('<!--EMBEDDED_DATA-->',()=>embedded).replace('<!--APPLICATION_SCRIPT-->',()=>'<script>'+contextSource+'\n'+appSource+'</script>');
 const originalHarness=fs.readFileSync(path.join(__dirname,'test-content.cjs'),'utf8'),boundary=originalHarness.indexOf('\nconst base=createRuntime();');assert(boundary>0,'Existing full-app runtime factory was not found');
 let prefix=originalHarness.slice(0,boundary).replace("const html=fs.readFileSync(filename,'utf8');",'const html=CORE_HTML;')
   .replace("function createRuntime(boot=stamp('2026-11-16T09:15:00')){","function createRuntime(boot=stamp('2026-11-16T09:15:00')){const options=RUNTIME_OPTIONS;")
@@ -32,10 +33,39 @@ const providerHarness=fs.readFileSync(path.join(__dirname,'test-setup-provider.c
 const providerContext={require,__dirname,console};vm.runInNewContext(providerHarness.slice(0,providerBoundary)+'\nthis.makePayload=payloadFor;',providerContext,{timeout:5000});
 const defaults=JSON.parse(fs.readFileSync(path.join(__dirname,'config.json'),'utf8')),legacyTable=fs.readFileSync(path.join(root,'data/timetable.json'),'utf8');
 test('An existing legacy installation keeps both original keys and all saved values without forcing setup or rewriting on boot',()=>{
-  const settings=clone(defaults);settings.iqama.offsets.fajr=26;settings.mosque.fields.name.value='Existing Mosque';delete settings.adhanAdjustments;const raw=JSON.stringify(settings),storage=new Map([[OLD_SETTINGS,raw],[OLD_TABLE,legacyTable]]),app=runtime({storage});const context=app.window.MosqueInstall.getContext();eq(context.required,false);eq(context.hasInstallation,false);eq(context.settings.iqama.offsets.fajr,26);eq(context.settings.mosque.fields.name.value,'Existing Mosque');eq(app.api.database.metadata.city,'الدمام');eq(storage.get(OLD_SETTINGS),raw);eq(storage.get(OLD_TABLE),legacyTable);eq(app.writes.length,0);eq(storage.has(INSTALL),false);
+  const settings=clone(defaults);settings.iqama.offsets.fajr=26;settings.mosque.fields.name.value='Existing Mosque';
+  delete settings.adhanAdjustments;delete settings.silentPhoneReminder;delete settings.postPrayerMinutes;
+  const raw=JSON.stringify(settings),storage=new Map([[OLD_SETTINGS,raw],[OLD_TABLE,legacyTable]]),app=runtime({storage});const context=app.window.MosqueInstall.getContext();eq(context.required,false);eq(context.hasInstallation,false);eq(context.settings.iqama.offsets.fajr,26);eq(context.settings.mosque.fields.name.value,'Existing Mosque');eq(app.api.database.metadata.city,'الدمام');eq(storage.get(OLD_SETTINGS),raw);eq(storage.get(OLD_TABLE),legacyTable);eq(app.writes.length,0);eq(storage.has(INSTALL),false);
+  eq(context.settings.silentPhoneReminder,true);eq(context.settings.postPrayerMinutes,5);
 });
 test('A native legacy-upgrade signal preserves the old dashboard while a genuinely fresh install requires setup and no Dammam timetable',()=>{
   const upgraded=runtime({native:{setupStatus:()=>JSON.stringify({legacyUpgrade:true})}});eq(upgraded.window.MosqueInstall.getContext().required,false);assert(upgraded.api.database);const fresh=runtime(),context=fresh.window.MosqueInstall.getContext();eq(context.required,true);eq(context.hasInstallation,false);eq(context.profile,null);eq(fresh.api.database,null);eq(fresh.api.getState().phase,'UNAVAILABLE');eq(context.settings.donation.visible,false);eq(context.settings.mosque.enabled,false);eq(fresh.storage.size,0);
+});
+test('A v2.3.3 profile and JSON backup acquire both display defaults without a wizard or writes, then round-trip explicit Off values',()=>{
+  const older=clone(defaults);delete older.silentPhoneReminder;delete older.postPrayerMinutes;
+  older.mosque.fields.name.value=newYork.mosqueName;older.iqama.offsets.fajr=27;
+  const savedTable=table(newYork),snapshot={schemaVersion:1,completedAt:'2026-11-16T08:00:00.000Z',profile:newYork,settings:older,timetable:savedTable};
+  const before=JSON.stringify(snapshot),storage=new Map([[INSTALL,before],[OLD_SETTINGS,JSON.stringify(older)]]);
+  const app=runtime({storage});const context=app.window.MosqueInstall.getContext();
+  eq(context.required,false);eq(context.hasInstallation,true);same(context.profile,newYork);eq(context.settings.silentPhoneReminder,true);eq(context.settings.postPrayerMinutes,5);
+  eq(context.settings.iqama.offsets.fajr,27);eq(storage.get(INSTALL),before);eq(app.writes.length,0);
+  app.api.openSettings();
+  function importBackup(settings){
+    const file=app.document.getElementById('settingsFile'),content=JSON.stringify(settings);
+    file.files=[{name:'settings.json',size:Buffer.byteLength(content),content}];app.fire(file,'change');
+  }
+  function exportBackup(){app.document.getElementById('exportSettingsButton').click();return JSON.parse(app.downloads.at(-1).textContent);}
+  importBackup(older);const migrated=exportBackup();eq(migrated.silentPhoneReminder,true);eq(migrated.postPrayerMinutes,5);
+  importBackup({...migrated,silentPhoneReminder:false,postPrayerMinutes:0});const chosen=exportBackup();
+  eq(chosen.silentPhoneReminder,false);eq(chosen.postPrayerMinutes,0);
+  for(const bad of [{postPrayerMinutes:'5'},{postPrayerMinutes:4},{postPrayerMinutes:null},{silentPhoneReminder:1},{silentPhoneReminder:null}]){
+    importBackup({...chosen,...bad});same(exportBackup(),chosen);
+  }
+  for(const minutes of [0,3,5,7])eq(app.api.validateSettings({...chosen,postPrayerMinutes:minutes}).postPrayerMinutes,minutes);
+  eq(storage.get(INSTALL),before);app.document.getElementById('saveButton').click();
+  const reloaded=runtime({storage}).window.MosqueInstall.getContext();
+  eq(reloaded.required,false);same(reloaded.profile,newYork);eq(reloaded.settings.silentPhoneReminder,false);eq(reloaded.settings.postPrayerMinutes,0);
+  same(JSON.parse(storage.get(INSTALL)).timetable,savedTable);
 });
 test('A genuinely fresh install with a missing or empty location catalog stays in required repair setup without silently showing Dammam data',()=>{
   for(const catalog of [null,{countries:[],methods:[]}]){const app=runtime({catalog}),context=app.window.MosqueInstall.getContext();eq(context.required,true);eq(context.hasInstallation,false);eq(context.profile,null);eq(app.api.database,null);eq(app.api.getState().phase,'UNAVAILABLE');eq(context.settings.mosque.enabled,false);eq(app.storage.size,0);eq(app.writes.length,0);}

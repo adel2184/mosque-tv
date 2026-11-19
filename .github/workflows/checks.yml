@@ -44,6 +44,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node dev/test-content.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node dev/test-prayer-context.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node dev/test-location-engine.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node dev/test-profile-store.cjs

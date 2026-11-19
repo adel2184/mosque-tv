@@ -6,6 +6,7 @@
   const locationEngine=window.MosqueLocation,profileStore=window.MosqueProfileStore;
   const KEYS = ['fajr', 'sunrise', 'dhuhr', 'asr', 'maghrib', 'isha'];
   const PRAYERS = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
+  const POST_PRAYER_MINUTES = [0,3,5,7];
   const NAMES = {fajr:'الفجر', sunrise:'الشروق', dhuhr:'الظهر', asr:'العصر', maghrib:'المغرب', isha:'العشاء'};
   const WEEKDAYS = ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
   const HIJRI_MONTHS = ['محرم','صفر','ربيع الأول','ربيع الآخر','جمادى الأولى','جمادى الآخرة','رجب','شعبان','رمضان','شوال','ذو القعدة','ذو الحجة'];
@@ -31,6 +32,7 @@
   const english=()=>activeProfile?.language==='en';
   const tr=(ar,en)=>english()?en:ar;
   const prayerName=k=>english()?({fajr:'Fajr',sunrise:'Sunrise',dhuhr:'Dhuhr',asr:'Asr',maghrib:'Maghrib',isha:'Isha'})[k]:NAMES[k];
+  const scheduledPrayerName=(k,date)=>k==='dhuhr'&&weekday(date)===5?tr('الجمعة','Jumu’ah'):prayerName(k);
   function formatClock(ms, style) {
     if(activeProfile&&locationEngine)return locationEngine.formatClock(ms,activeProfile,style);
     const d = new Date(ms+OFFSET), hour = d.getUTCHours();
@@ -92,6 +94,10 @@
       out.iqama.overrides.push({id:textValue(o.id,60,'معرّف الموعد'),kind:o.kind,match:o.match,prayer:o.prayer,time:o.time,label:textValue(o.label||'',80,'وصف الموعد')});
     });
     out.prayerModeMinutes=number(c.prayerModeMinutes,1,60,'مدة وضع الصلاة',true);
+    // Version-1 backups and installed profiles from before 2.4 have neither field.
+    out.silentPhoneReminder=c.silentPhoneReminder===undefined?defaults.silentPhoneReminder:bool(c.silentPhoneReminder,'تنبيه إغلاق الجوالات');
+    out.postPrayerMinutes=c.postPrayerMinutes===undefined?defaults.postPrayerMinutes:c.postPrayerMinutes;
+    if(!POST_PRAYER_MINUTES.includes(out.postPrayerMinutes))fail('اختر مدة معتمدة لأذكار ما بعد الصلاة.');
     out.adhanAdjustments={};KEYS.forEach(k=>out.adhanAdjustments[k]=number(c.adhanAdjustments?.[k]??0,-120,120,'تعديل وقت '+NAMES[k],true));
     out.slideSeconds=number(c.slideSeconds,5,300,'فاصل الشرائح',true);
     if(!['arabic','western'].includes(c.digitStyle))fail('نمط الأرقام غير مدعوم.');out.digitStyle=c.digitStyle;
@@ -187,19 +193,21 @@
     }
     const latest=low>0?events[low-1]:null;
     const active=latest&&ms<latest.end?latest:null;
+    // A guard date supplies the next Fajr, but must not start its own post-prayer programme.
+    const previous=latest&&latest.end<=ms&&latest.id!==suppressedId&&db.metadata.displayYears.includes(Number(latest.date.slice(0,4)))?latest:null;
     // Let the final supported day's Isha finish across the terminal boundary.
     if(!db.metadata.displayYears.includes(year)||!db.index.has(key)){
       if(active&&db.metadata.displayYears.includes(Number(active.date.slice(0,4)))){
         if(ms<active.iqama)return {phase:'WAITING_FOR_IQAMA',active,next:active,targetAt:active.iqama,highlight:active.prayer};
         if(active.id!==suppressedId)return {phase:'PRAYER_MODE',active,next:null,targetAt:active.end,highlight:active.prayer};
       }
-      return {phase:'UNAVAILABLE',active:null,next:null,targetAt:null,highlight:null};
+      return {phase:'UNAVAILABLE',active:null,next:null,targetAt:null,highlight:null,previous};
     }
     if(active&&ms<active.iqama)return {phase:'WAITING_FOR_IQAMA',active,next:active,targetAt:active.iqama,highlight:active.prayer};
     if(active&&active.id!==suppressedId)return {phase:'PRAYER_MODE',active,next:null,targetAt:active.end,highlight:active.prayer};
     const next=events[low]||null;
     const hasPrevious=Boolean(latest&&(latest.end<=ms||(latest.id===suppressedId&&latest.iqama<=ms)));
-    return {phase:hasPrevious?'WAITING_FOR_NEXT_ADHAN':'WAITING_FOR_ADHAN',active:null,next,targetAt:next?.adhan||null,highlight:next?.prayer||null};
+    return {phase:hasPrevious?'WAITING_FOR_NEXT_ADHAN':'WAITING_FOR_ADHAN',active:null,next,targetAt:next?.adhan||null,highlight:next?.prayer||null,previous};
   }
   function safeRead(storage,key){try{return {ok:true,value:storage.getItem(key)};}catch(error){return {ok:false,value:null,error:String(error)};}}
   function safeWrite(storage,key,value){try{storage.setItem(key,value);return {ok:true};}catch(error){return {ok:false,error:String(error)};}}
@@ -240,7 +248,7 @@
   KEYS.forEach(k=>{const row=el('tr');row.dataset.prayer=k;const name=el('th',null,NAMES[k]);name.scope='row';const adhan=el('td','time-cell','—'),iqama=el('td','time-cell','—');adhan.dir='ltr';iqama.dir='ltr';row.append(name,adhan,iqama);$('prayerRows').append(row);rows.set(k,{row,adhan,iqama});});
   function renderPrayerTable(ms){
     const key=dateKey(ms), r=database?.index.get(key), supported=database?.metadata.displayYears.includes(Number(key.slice(0,4)));
-    KEYS.forEach(k=>{const ui=rows.get(k);ui.adhan.textContent=supported&&r?formatTime((r.instants?.[k]??timestamp(key,r[k]))+(currentSettings.adhanAdjustments?.[k]||0)*60000,currentSettings.digitStyle):'—';const event=events.find(e=>e.date===key&&e.prayer===k);ui.iqama.textContent=supported&&event&&k!=='sunrise'?formatTime(event.iqama,currentSettings.digitStyle):'—';ui.row.classList.toggle('informational',k==='sunrise');});
+    KEYS.forEach(k=>{const ui=rows.get(k);ui.row.querySelector('th').textContent=scheduledPrayerName(k,key);ui.adhan.textContent=supported&&r?formatTime((r.instants?.[k]??timestamp(key,r[k]))+(currentSettings.adhanAdjustments?.[k]||0)*60000,currentSettings.digitStyle):'—';const event=events.find(e=>e.date===key&&e.prayer===k);ui.iqama.textContent=supported&&event&&k!=='sunrise'?formatTime(event.iqama,currentSettings.digitStyle):'—';ui.row.classList.toggle('informational',k==='sunrise');});
     const unavailable=!database||!supported||!r;
     $('displayStatus').hidden=!unavailable;
     $('dataStatus').textContent=unavailable?tr('بيانات المواقيت غير متوفرة لهذا التاريخ — حدّث الجدول من الإعدادات','Prayer times unavailable for this date — update the timetable in settings'):'';
@@ -277,7 +285,7 @@
   }
   function renderDonation(){
     const cfg=currentSettings.donation,card=$('donationCard');
-    const show=cfg.visible&&contentMode!=='prayer';
+    const show=cfg.visible&&contentMode!=='prayer'&&contentMode!=='post-prayer';
     card.hidden=!show;$('stage').classList.toggle('donation-hidden',!cfg.visible);
     $('donationTitle').textContent=cfg.title;
     $('donationDescription').textContent=cfg.description;
@@ -322,15 +330,89 @@
     host.classList.toggle('long-slide',Boolean(s.text&&s.text.length>150));
     fitSlideText();
   }
+  const guide=displayContent.prayerGuide, guideState={};
+  let guideDay, shownCue, shownFriday, shownPhone, shownRamadan, shownLanguage;
+  let shownPostCard=-1, shownRamadanSeconds=-1;
+  function formatDuration(seconds){
+    return digits(pad(Math.floor(seconds/3600))+':'+pad(Math.floor(seconds/60)%60)+':'+pad(seconds%60),currentSettings.digitStyle);
+  }
+  function syncGuide(ms){
+    const {cue,phone,friday,ramadan,ramadanAt,postStart}=guideState;
+    const lang=english()?'en':'ar',languageChanged=lang!==shownLanguage;
+    const cueChanged=cue!==shownCue,fridayChanged=friday!==shownFriday;
+    if(cueChanged||fridayChanged||languageChanged){
+      const visit=cue==='entrance'||cue==='exit', fridayCard=friday!=='none'&&cue!=='rows';
+      const contextual=visit||fridayCard;
+      const ticker=$('mosqueTicker'),scrolling=!contextual&&cue!=='rows'&&cue!=='adhkar';
+      ticker.hidden=!contextual&&!scrolling;
+      ticker.classList.toggle('contextual',contextual);
+      ticker.classList.toggle('ticker-paused',!scrolling);
+      $('contextTicker').hidden=!contextual;
+      $('tickerViewport').hidden=!scrolling;
+      $('visitReminder').hidden=!visit;
+      $('exitReminder').hidden=cue!=='exit';
+      if(visit){
+        $('visitLabel').textContent=cue==='exit'?tr('دعاء الخروج من المسجد','Leaving the mosque'):tr('دعاء دخول المسجد','Entering the mosque');
+        $('visitText').textContent=cue==='exit'?guide.exit:guide.entrance;
+        if(cue==='exit')$('exitReminder').textContent=guide.exitReminder[lang];
+      }
+      $('fridayReminders').hidden=!fridayCard;
+      $('fridayBlessings').hidden=friday!=='morning';
+      if(fridayCard){
+        $('fridayMessage').textContent=friday==='listen'?guide.khutbah:guide.fridayKahf;
+        if(friday==='morning')$('fridayBlessings').textContent=guide.fridayBlessings;
+      }
+      $('rowsKhutbah').hidden=!(cue==='rows'&&friday==='listen');
+      if(cue==='rows'&&friday==='listen')$('rowsKhutbah').textContent=guide.khutbah;
+      if(scrolling)sizeTicker();
+    }
+    if(cueChanged||phone!==shownPhone||languageChanged){
+      $('phoneReminder').hidden=!(phone&&cue==='entrance');
+      $('rowsPhoneReminder').hidden=!(phone&&cue==='rows');
+      if(phone){
+        const reminder=tr('الرجاء إغلاق الجوالات أو وضعها على الصامت','Please silence or turn off your mobile phones');
+        $(cue==='rows'?'rowsPhoneReminder':'phoneReminder').textContent=reminder;
+      }
+      if(!cueChanged&&phone!==shownPhone&&cue==='entrance')fitSlideText();
+    }
+    if(cue==='adhkar'){
+      const cards=guide.postPrayer;
+      // Even the shortest configured session includes every card. Resumes use wall time.
+      const dwell=Math.min(30000,currentSettings.postPrayerMinutes*60000/cards.length);
+      const cardIndex=Math.floor((ms-postStart)/dwell)%cards.length;
+      if(cueChanged||languageChanged)$('postPrayerHeading').textContent=tr('أذكار ما بعد الصلاة','Post-prayer adhkar');
+      if(cueChanged||languageChanged||cardIndex!==shownPostCard){
+        const card=cards[cardIndex],body=$('postPrayerText');
+        $('postPrayerTitle').textContent=card.title[lang];
+        body.textContent=card.text;
+        body.classList.toggle('long-dhikr',card.text.length>170);
+        $('postPrayerNote').textContent=card.note[lang];
+        $('postPrayerNote').hidden=!card.note[lang];
+        shownPostCard=cardIndex;
+      }
+    }
+    if(ramadan!==shownRamadan||languageChanged){
+      $('ramadanPill').hidden=ramadan==='none';
+      if(ramadan!=='none'){
+        const label=ramadan==='iftar'?tr('المتبقي للإفطار','Until iftar'):ramadan==='fajr-only'?tr('المتبقي للفجر','Until Fajr'):tr('المتبقي للإمساك (الفجر)','Until imsak (Fajr)');
+        $('ramadanLabel').textContent=label;
+      }
+    }
+    if(ramadanAt!==null&&cue!=='rows'){
+      const seconds=Math.max(0,Math.ceil((ramadanAt-ms)/1000));
+      if(seconds!==shownRamadanSeconds||languageChanged)$('ramadanTime').textContent=formatDuration(seconds);
+      shownRamadanSeconds=seconds;
+    }
+    shownCue=cue;shownFriday=friday;shownPhone=phone;shownRamadan=ramadan;shownLanguage=lang;
+  }
   function syncContentMode(){
-    const next=state.phase==='PRAYER_MODE'?'prayer':state.phase==='WAITING_FOR_IQAMA'?'adhan':'slides';
+    const cue=guideState.cue;
+    const next=cue==='rows'?'prayer':cue==='adhkar'?'post-prayer':cue==='entrance'?'adhan':'slides';
     if(next===contentMode)return;
     contentMode=next;
-    // Restore the ticker before measuring the resumed slide's available height.
-    $('mosqueTicker').hidden=next==='prayer';
-    $('mosqueTicker').classList.toggle('ticker-paused',next==='prayer');
+    $('mainDashboard').hidden=next==='post-prayer';
+    $('postPrayerDisplay').hidden=next!=='post-prayer';
     renderDonation();
-    if(next!=='prayer')sizeTicker();
     if(next==='adhan')renderPostAdhan();
     else if(next==='slides')renderSlide();
     else ++slideGeneration;
@@ -342,10 +424,11 @@
     // A resumed browser advances at most one slide; missed transitions are never replayed.
     slideElapsed+=Math.min(delta,currentSettings.slideSeconds*1000);
     if(slideElapsed>=currentSettings.slideSeconds*1000){slideElapsed=0;slideIndex=slideAdvance(slideIndex,enabledSlides().length);renderSlide();}
-    $('slideProgress').style.width=(slideElapsed/(currentSettings.slideSeconds*1000)*100)+'%';
+    const width=Math.floor(slideElapsed/1000)/currentSettings.slideSeconds*100+'%';
+    if($('slideProgress').style.width!==width)$('slideProgress').style.width=width;
   }
   function sizeTicker(){
-    const track=$('tickerTrack'),cycle=track.children[0];if(!cycle)return;
+    const track=$('tickerTrack'),cycle=track.children[0];if(!cycle||$('tickerViewport').hidden)return;
     const width=cycle.scrollWidth;
     if(width<=0)return; // Hidden prayer-mode content has no measurable width.
     track.style.setProperty('--ticker-distance',width+'px');
@@ -364,23 +447,29 @@
     const ms=nowProvider(), key=dateKey(ms), clock=formatClock(ms,currentSettings.digitStyle);
     if($('clockTime').textContent!==clock.time)$('clockTime').textContent=clock.time;if($('clockPeriod').textContent!==clock.period)$('clockPeriod').textContent=clock.period;
     state=resolveState(ms,events,database,suppressedId,key);
-    if(key!==lastDate){lastDate=key;renderDates(ms);renderPrayerTable(ms);}
+    if(key!==lastDate){
+      lastDate=key;renderDates(ms);renderPrayerTable(ms);
+      const todayHijri=hijriFallback(key);
+      const nextMonth=todayHijri?.month===9&&todayHijri.day>=29?hijriFallback(addDays(key,1))?.month:todayHijri?.month;
+      guideDay=window.MosquePrayerContext.prepareDay(events,key,todayHijri,nextMonth);
+    }
+    window.MosquePrayerContext.resolve(ms,state,guideDay,currentSettings,guideState);
     const signature=key+'/'+state.phase+'/'+state.highlight+'/'+(state.next?.date||'')+'/'+currentSettings.digitStyle;
     if(signature!==lastRenderSignature){
       lastRenderSignature=signature;
       rows.forEach((ui,k)=>ui.row.classList.toggle('next-prayer',k===state.highlight));
       if(state.phase==='UNAVAILABLE')$('countdownLabel').textContent=tr('بيانات المواقيت غير متوفرة لهذا التاريخ','Prayer times are unavailable for this date');
-      else if(state.phase==='WAITING_FOR_IQAMA')$('countdownLabel').textContent=tr('المتبقي على إقامة ','Until iqama: ')+prayerName(state.active.prayer);
+      else if(state.phase==='WAITING_FOR_IQAMA')$('countdownLabel').textContent=tr('المتبقي على إقامة ','Until iqama: ')+scheduledPrayerName(state.active.prayer,state.active.date);
       else if(state.phase==='PRAYER_MODE')$('countdownLabel').textContent=tr('تُقام الصلاة الآن','Prayer is in progress');
-      else $('countdownLabel').textContent=state.next?tr('المتبقي على أذان ','Until adhan: ')+prayerName(state.next.prayer):tr('حدّث جدول المواقيت','Update the prayer timetable');
+      else $('countdownLabel').textContent=state.next?tr('المتبقي على أذان ','Until adhan: ')+scheduledPrayerName(state.next.prayer,state.next.date):tr('حدّث جدول المواقيت','Update the prayer timetable');
       $('nextDateLabel').textContent=state.next&&state.next.date!==key?tr('موعد اليوم التالي','Next day'):'';
     }
     const remaining=state.targetAt?Math.max(0,Math.ceil((state.targetAt-ms)/1000)):null;
-    const countdownText=remaining===null?'— — : — — : — —':digits(pad(Math.floor(remaining/3600))+':'+pad(Math.floor(remaining/60)%60)+':'+pad(remaining%60),currentSettings.digitStyle);if($('countdownValue').textContent!==countdownText)$('countdownValue').textContent=countdownText;
+    const countdownText=remaining===null?'— — : — — : — —':formatDuration(remaining);if($('countdownValue').textContent!==countdownText)$('countdownValue').textContent=countdownText;
     const inPrayer=state.phase==='PRAYER_MODE';
     if(inPrayer&&lastPhase!=='PRAYER_MODE'){if(settingsOpen){closeSettings(true);return;}$('prayerOverlay').hidden=false;$('prayerOverlay').setAttribute('aria-hidden','false');document.body.classList.add('praying');}
     if(!inPrayer&&lastPhase==='PRAYER_MODE'){$('prayerOverlay').hidden=true;$('prayerOverlay').setAttribute('aria-hidden','true');document.body.classList.remove('praying');}
-    lastPhase=state.phase;syncContentMode();updateSlideshow(ms,contentMode!=='slides');
+    lastPhase=state.phase;syncGuide(ms);syncContentMode();updateSlideshow(ms,contentMode!=='slides');
     if(!settingsOpen&&ms-lastInteraction>5000&&!document.body.classList.contains('idle'))document.body.classList.add('idle');
   }
   function fitInformation(){
@@ -393,7 +482,7 @@
       info.style.fontSize=(23*scale)+'px';if(name)name.style.fontSize=(43*scale)+'px';
     }
   }
-  function refresh(){lastDate='';lastRenderSignature='';contentMode='';if(window.MosqueLocale)window.MosqueLocale.set(activeProfile?.language||'ar');rows.forEach((ui,k)=>ui.row.querySelector('th').textContent=prayerName(k));renderMosque();tick();}
+  function refresh(){lastDate='';lastRenderSignature='';contentMode='';shownLanguage=null;if(window.MosqueLocale)window.MosqueLocale.set(activeProfile?.language||'ar');renderMosque();tick();}
   function applySettings(validated,preparedEvents){
     currentSettings=validated;events=preparedEvents;
     if(settingsOpen)previewApplied=true;
@@ -436,71 +525,88 @@
   function resize(){const scale=Math.min(innerWidth/1920,innerHeight/1080);$('stage').style.transform='scale('+scale+')';$('stage').style.left=((innerWidth-1920*scale)/2)+'px';$('stage').style.top=((innerHeight-1080*scale)/2)+'px';fitInformation();fitSlideText();fitDonationText();sizeTicker();}
   function message(text,error){$('settingsMessage').textContent=text;$('settingsMessage').className=error?'error':'success';}
   function input(label,value,type,onchange,opts){const wrap=el('label','field'),caption=el('span',null,label),control=el('input');control.type=type||'text';if(type==='checkbox')control.checked=value;else control.value=value;Object.assign(control,opts||{});control.addEventListener('input',()=>onchange(type==='checkbox'?control.checked:type==='number'?Number(control.value):control.value));wrap.append(caption,control);return wrap;}
-  function section(title){const node=el('section','settings-section');node.append(el('h3',null,title));$('settingsBody').append(node);return node;}
   function button(text,action){const b=el('button',null,text);b.type='button';b.addEventListener('click',action);return b;}
   function select(label,value,options,onchange){const wrap=el('label','field'),s=el('select');options.forEach(([v,t])=>{const o=el('option',null,t);o.value=v;s.append(o);});s.value=value;s.addEventListener('change',()=>onchange(s.value));wrap.append(el('span',null,label),s);return wrap;}
-  function drawLegacySettings(){
-    $('settingsBody').replaceChildren();
-    let s=section('بيانات الجامع');s.append(input('إظهار قسم بيانات الجامع كاملًا',draft.mosque.enabled,'checkbox',v=>draft.mosque.enabled=v));
-    for(const k of Object.keys(FIELD_LABELS)){const row=el('div','inline');row.append(input(FIELD_LABELS[k],draft.mosque.fields[k].value,'text',v=>draft.mosque.fields[k].value=v,{maxLength:k==='name'?180:360}),input('إظهار / إخفاء',draft.mosque.fields[k].visible,'checkbox',v=>draft.mosque.fields[k].visible=v));s.append(row);}
-    s.append(el('p','notice','تُحفظ قيم الحقول عند إخفائها. اترك المعلومات غير المعروفة فارغة.'));
-    draft.mosque.custom.forEach((f,i)=>{const row=el('div','custom-row');row.dataset.tvGroup=f.id;row.dataset.tvLabel='الحقل الإضافي '+(i+1);row.append(input('عنوان اختياري',f.label,'text',v=>f.label=v,{maxLength:60}),input('نص إضافي',f.value,'text',v=>f.value=v,{maxLength:240}),input('إظهار',f.visible,'checkbox',v=>f.visible=v),button('أعلى',()=>{if(i){[draft.mosque.custom[i-1],draft.mosque.custom[i]]=[f,draft.mosque.custom[i-1]];drawSettings();}}),button('أسفل',()=>{if(i<draft.mosque.custom.length-1){[draft.mosque.custom[i+1],draft.mosque.custom[i]]=[f,draft.mosque.custom[i+1]];drawSettings();}}),button('حذف',()=>{draft.mosque.custom.splice(i,1);drawSettings();}));s.append(row);});
-    s.append(button('إضافة حقل نصي',()=>{if(draft.mosque.custom.length>=8)return message('الحد الأقصى ثمانية حقول.',true);draft.mosque.custom.push({id:'field-'+Date.now(),label:'',value:'',visible:true});drawSettings();}));
-    s=section('الإقامة ووضع الصلاة');s.append(el('p','notice','الفواصل التالية أمثلة أولية تحتاج تأكيد إدارة الجامع. مواقيت الإقامة إعدادات محلية وليست نتائج فلكية.'));
-    const intervals=el('div','inline');PRAYERS.forEach(p=>intervals.append(input(NAMES[p]+' (دقيقة)',draft.iqama.offsets[p],'number',v=>draft.iqama.offsets[p]=v,{min:1,max:180,step:1})));s.append(intervals,input('تمت مراجعة إعدادات الإقامة مع إدارة الجامع',draft.iqama.confirmed,'checkbox',v=>draft.iqama.confirmed=v),input('مدة وضع الصلاة (دقيقة)',draft.prayerModeMinutes,'number',v=>draft.prayerModeMinutes=v,{min:1,max:60,step:1}));
-    s.append(el('p','notice',tr('يمكن تحديد إقامة ثابتة ليوم أسبوعي أو تاريخ بعينه. يتقدم التاريخ على الموعد الأسبوعي. لا يوجد موعد جمعة مفترض. تُستخدم المنطقة الزمنية المختارة وصيغة 24 ساعة؛ للعشاء فقط يمكن الامتداد إلى اليوم التالي.','Set a fixed iqama for a weekday or date. A date override takes priority. No Friday time is assumed. Times use the selected zone and 24-hour format; only Isha may extend into the next day.')));
-    draft.iqama.overrides.forEach((o,i)=>{const row=el('div','override-row');row.dataset.tvGroup=o.id;row.dataset.tvLabel='موعد الإقامة '+(i+1);row.append(select('الصلاة',o.prayer,PRAYERS.map(k=>[k,NAMES[k]]),v=>o.prayer=v),select('التكرار',o.kind,[['weekday','يوم في الأسبوع'],['date','تاريخ محدد']],v=>{o.kind=v;o.match=v==='weekday'?'5':dateKey(nowProvider());drawSettings();}));if(o.kind==='weekday')row.append(select('اليوم',o.match,WEEKDAYS.map((n,j)=>[String(j),n]),v=>o.match=v));else row.append(input('التاريخ',o.match,'date',v=>o.match=v));row.append(input('الإقامة 24 ساعة',o.time,'time',v=>o.time=v),input('وصف مثل ترتيب الجمعة',o.label,'text',v=>o.label=v,{maxLength:80}),button('حذف',()=>{draft.iqama.overrides.splice(i,1);drawSettings();}));s.append(row);});
-    s.append(button('إضافة موعد إقامة ثابت',()=>{if(draft.iqama.overrides.length>=80)return message('الحد الأقصى ثمانون موعدًا.',true);draft.iqama.overrides.push({id:'override-'+Date.now(),kind:'weekday',match:'5',prayer:'dhuhr',time:'',label:''});drawSettings();}));
-    s=section('العرض والأرقام');s.append(input('فاصل الشرائح (ثانية)',draft.slideSeconds,'number',v=>draft.slideSeconds=v,{min:5,max:300,step:1}),select('نمط الأرقام',draft.digitStyle,[['western','0123456789 — أرقام غربية'],['arabic','٠١٢٣٤٥٦٧٨٩ — أرقام عربية']],v=>draft.digitStyle=v));
-    s=section('بطاقة التبرع');
-    s.append(input('إظهار بطاقة التبرع',draft.donation.visible,'checkbox',v=>draft.donation.visible=v),input('عنوان مشروع التبرع',draft.donation.title,'text',v=>draft.donation.title=v,{maxLength:90}),input('وصف مختصر للمشروع',draft.donation.description,'text',v=>draft.donation.description=v,{maxLength:180}),el('p','notice','تظهر البطاقة ثابتة بجوار الأذكار، وتختفي أثناء وضع الصلاة. إخفاؤها يحفظ النصوص. رمز التبرع هو الصورة المحلية المرفقة؛ تعديل النص لا يغير وجهة الرمز.'));
-    s=section('المواقيت والتقويم');
-    s.append(button(tr('إعداد الموقع واللغة والتقويم','Set up location, language and calendar'),()=>{closeSettings(true);if(window.MosqueControl?.isOpen())window.MosqueControl.close({restoreFocus:false});window.MosqueSetup?.open({required:setupPending});}));
-    KEYS.forEach(k=>s.append(input(tr('تعديل وقت '+NAMES[k]+' (دقيقة)','Adjust '+prayerName(k)+' (minutes)'),draft.adhanAdjustments?.[k]||0,'number',v=>{draft.adhanAdjustments=draft.adhanAdjustments||{};draft.adhanAdjustments[k]=v;},{min:-120,max:120,step:1})));
-    s.append(el('p','notice',database?tr('المصدر: ','Source: ')+database.metadata.source+tr(' | السنوات: ',' | Years: ')+database.metadata.displayYears.join(', ')+tr(' | الحالة: ',' | Status: ')+(database.metadata.verificationStatus==='calculated-needs-review'?tr('مواقيت محسوبة — تحتاج مراجعة','Calculated times — local review required'):tr('جدول مستورد — يحتاج مراجعة مصدره','Imported timetable — review its provenance')):tr('تعذر تحميل المواقيت: ','Could not load prayer times: ')+databaseError));
-    s.append(input('خط العرض للمراجعة وإعادة التوليد',draft.location.latitude,'number',v=>draft.location.latitude=v,{step:'0.0001'}),input('خط الطول للمراجعة وإعادة التوليد',draft.location.longitude,'number',v=>draft.location.longitude=v,{step:'0.0001'}),el('p','notice','تغيير الإحداثيات لا يعيد حساب الجدول داخل المتصفح. أعد توليده بأداة التطوير ثم استورد الملف الناتج؛ يظل مصدر الجدول وإحداثياته الأصلية محفوظين.'));
-    s.append(button('استيراد جدول مواقيت JSON',()=>$('timetableFile').click()),button('تصدير جدول المواقيت',exportTimetable));
-    const daysLeft=database?Math.floor((timestamp(database.metadata.displayYears[1]+'-12-31','23:59')-nowProvider())/DAY):0;
-    if(daysLeft<90)s.append(el('p','error',daysLeft<0?'انتهت تغطية المواقيت؛ استورد جدولًا جديدًا.':'تنتهي تغطية المواقيت خلال '+daysLeft+' يومًا؛ جهّز جدول السنة الجديدة.'));
-    s.append(el('p','notice',tr('تقويم أم القرى مدني ويتغير عند منتصف الليل. المنطقة الزمنية: ','Umm al-Qura civil dates change at midnight. Time zone: ')+ZONE+tr('. التغطية المحلية: ','. Local coverage: ')+calendar.rangeStart+' — '+calendar.rangeEnd));
-    s=section('الحفظ والتشغيل');s.append(el('p','notice',storageNote||'التخزين المحلي متاح لهذه الجلسة. يُنصح بتصدير نسخة احتياطية.'));
-    s.append(el('p','notice','قد يختلف حفظ الإعدادات تحت file:// باختلاف المتصفح. نقل الملف أو تغيير اسمه قد يغيّر مساحة التخزين. ملف JSON المصدّر هو النسخة الاحتياطية القابلة للنقل. لا يُكتب ملف index.html من المتصفح.'));
-    s.append(el('p','notice','الإعدادات: Ctrl + , أو زر الإعدادات. ملء الشاشة من الزر أو F11 في المتصفحات الداعمة. للخروج الاضطراري من السواد: Ctrl + Alt + M؛ يخص التجاوز فترة الصلاة الحالية فقط. اضبط ساعة الجهاز وأوقف السكون وشاشة التوقف من إعدادات النظام. لا يستطيع التطبيق غير المتصل مزامنة الساعة.'));
+  // Desktop renders the complete form. On the TV, create only the section being edited.
+  const settingsPages=[
+    {id:'mosque', title:'بيانات الجامع', render(s){
+      s.append(input('إظهار قسم بيانات الجامع كاملًا',draft.mosque.enabled,'checkbox',v=>draft.mosque.enabled=v));
+      for(const k of Object.keys(FIELD_LABELS)){const row=el('div','inline');row.append(input(FIELD_LABELS[k],draft.mosque.fields[k].value,'text',v=>draft.mosque.fields[k].value=v,{maxLength:k==='name'?180:360}),input('إظهار / إخفاء',draft.mosque.fields[k].visible,'checkbox',v=>draft.mosque.fields[k].visible=v));s.append(row);}
+      s.append(el('p','notice','تُحفظ قيم الحقول عند إخفائها. اترك المعلومات غير المعروفة فارغة.'));
+      draft.mosque.custom.forEach((f,i)=>{const row=el('div','custom-row');row.dataset.tvGroup=f.id;row.dataset.tvLabel='الحقل الإضافي '+(i+1);row.append(input('عنوان اختياري',f.label,'text',v=>f.label=v,{maxLength:60}),input('نص إضافي',f.value,'text',v=>f.value=v,{maxLength:240}),input('إظهار',f.visible,'checkbox',v=>f.visible=v),button('أعلى',()=>{if(i){[draft.mosque.custom[i-1],draft.mosque.custom[i]]=[f,draft.mosque.custom[i-1]];drawSettings();}}),button('أسفل',()=>{if(i<draft.mosque.custom.length-1){[draft.mosque.custom[i+1],draft.mosque.custom[i]]=[f,draft.mosque.custom[i+1]];drawSettings();}}),button('حذف',()=>{draft.mosque.custom.splice(i,1);drawSettings();}));s.append(row);});
+      s.append(button('إضافة حقل نصي',()=>{if(draft.mosque.custom.length>=8)return message('الحد الأقصى ثمانية حقول.',true);draft.mosque.custom.push({id:'field-'+Date.now(),label:'',value:'',visible:true});drawSettings();}));
+    }},
+    {id:'iqama', title:'الإقامة ووضع الصلاة', render(s){
+      s.append(el('p','notice','الفواصل التالية أمثلة أولية تحتاج تأكيد إدارة الجامع. مواقيت الإقامة إعدادات محلية وليست نتائج فلكية.'));
+      const intervals=el('div','inline');PRAYERS.forEach(p=>intervals.append(input(NAMES[p]+' (دقيقة)',draft.iqama.offsets[p],'number',v=>draft.iqama.offsets[p]=v,{min:1,max:180,step:1})));s.append(intervals,input('تمت مراجعة إعدادات الإقامة مع إدارة الجامع',draft.iqama.confirmed,'checkbox',v=>draft.iqama.confirmed=v),input('مدة وضع الصلاة (دقيقة)',draft.prayerModeMinutes,'number',v=>draft.prayerModeMinutes=v,{min:1,max:60,step:1}));
+      s.append(el('p','notice',tr('يمكن تحديد إقامة ثابتة ليوم أسبوعي أو تاريخ بعينه. يتقدم التاريخ على الموعد الأسبوعي. لا يوجد موعد جمعة مفترض. تُستخدم المنطقة الزمنية المختارة وصيغة 24 ساعة؛ للعشاء فقط يمكن الامتداد إلى اليوم التالي.','Set a fixed iqama for a weekday or date. A date override takes priority. No Friday time is assumed. Times use the selected zone and 24-hour format; only Isha may extend into the next day.')));
+      draft.iqama.overrides.forEach((o,i)=>{const row=el('div','override-row');row.dataset.tvGroup=o.id;row.dataset.tvLabel='موعد الإقامة '+(i+1);row.append(select('الصلاة',o.prayer,PRAYERS.map(k=>[k,NAMES[k]]),v=>o.prayer=v),select('التكرار',o.kind,[['weekday','يوم في الأسبوع'],['date','تاريخ محدد']],v=>{o.kind=v;o.match=v==='weekday'?'5':dateKey(nowProvider());drawSettings();}));if(o.kind==='weekday')row.append(select('اليوم',o.match,WEEKDAYS.map((n,j)=>[String(j),n]),v=>o.match=v));else row.append(input('التاريخ',o.match,'date',v=>o.match=v));row.append(input('الإقامة 24 ساعة',o.time,'time',v=>o.time=v),input('وصف مثل ترتيب الجمعة',o.label,'text',v=>o.label=v,{maxLength:80}),button('حذف',()=>{draft.iqama.overrides.splice(i,1);drawSettings();}));s.append(row);});
+      s.append(button('إضافة موعد إقامة ثابت',()=>{if(draft.iqama.overrides.length>=80)return message('الحد الأقصى ثمانون موعدًا.',true);draft.iqama.overrides.push({id:'override-'+Date.now(),kind:'weekday',match:'5',prayer:'dhuhr',time:'',label:''});drawSettings();}));
+    }},
+    {id:'display', title:'العرض والأرقام', render(s){
+      s.append(input('فاصل الشرائح (ثانية)',draft.slideSeconds,'number',v=>draft.slideSeconds=v,{min:5,max:300,step:1}),select('نمط الأرقام',draft.digitStyle,[['western','0123456789 — أرقام غربية'],['arabic','٠١٢٣٤٥٦٧٨٩ — أرقام عربية']],v=>draft.digitStyle=v));
+      s.append(input('تنبيه إغلاق الجوالات',draft.silentPhoneReminder,'checkbox',v=>draft.silentPhoneReminder=v),
+        select('مدة عرض أذكار ما بعد الصلاة',String(draft.postPrayerMinutes),
+          POST_PRAYER_MINUTES.map(minutes=>[String(minutes),minutes?minutes+' دقائق':'إيقاف']),
+          value=>draft.postPrayerMinutes=Number(value)));
+    }},
+    {id:'donation', title:'بطاقة التبرع', render(s){
+      s.append(input('إظهار بطاقة التبرع',draft.donation.visible,'checkbox',v=>draft.donation.visible=v),input('عنوان مشروع التبرع',draft.donation.title,'text',v=>draft.donation.title=v,{maxLength:90}),input('وصف مختصر للمشروع',draft.donation.description,'text',v=>draft.donation.description=v,{maxLength:180}),el('p','notice','تظهر البطاقة ثابتة بجوار الأذكار، وتختفي أثناء وضع الصلاة. إخفاؤها يحفظ النصوص. رمز التبرع هو الصورة المحلية المرفقة؛ تعديل النص لا يغير وجهة الرمز.'));
+    }},
+    {id:'data', title:'المواقيت والتقويم', render(s){
+      s.append(button(tr('إعداد الموقع واللغة والتقويم','Set up location, language and calendar'),()=>{closeSettings(true);if(window.MosqueControl?.isOpen())window.MosqueControl.close({restoreFocus:false});window.MosqueSetup?.open({required:setupPending});}));
+      KEYS.forEach(k=>s.append(input(tr('تعديل وقت '+NAMES[k]+' (دقيقة)','Adjust '+prayerName(k)+' (minutes)'),draft.adhanAdjustments?.[k]||0,'number',v=>{draft.adhanAdjustments=draft.adhanAdjustments||{};draft.adhanAdjustments[k]=v;},{min:-120,max:120,step:1})));
+      s.append(el('p','notice',database?tr('المصدر: ','Source: ')+database.metadata.source+tr(' | السنوات: ',' | Years: ')+database.metadata.displayYears.join(', ')+tr(' | الحالة: ',' | Status: ')+(database.metadata.verificationStatus==='calculated-needs-review'?tr('مواقيت محسوبة — تحتاج مراجعة','Calculated times — local review required'):tr('جدول مستورد — يحتاج مراجعة مصدره','Imported timetable — review its provenance')):tr('تعذر تحميل المواقيت: ','Could not load prayer times: ')+databaseError));
+      s.append(input('خط العرض للمراجعة وإعادة التوليد',draft.location.latitude,'number',v=>draft.location.latitude=v,{step:'0.0001'}),input('خط الطول للمراجعة وإعادة التوليد',draft.location.longitude,'number',v=>draft.location.longitude=v,{step:'0.0001'}),el('p','notice','تغيير الإحداثيات لا يعيد حساب الجدول داخل المتصفح. أعد توليده بأداة التطوير ثم استورد الملف الناتج؛ يظل مصدر الجدول وإحداثياته الأصلية محفوظين.'));
+      s.append(button('استيراد جدول مواقيت JSON',()=>$('timetableFile').click()),button('تصدير جدول المواقيت',exportTimetable));
+      const daysLeft=database?Math.floor((timestamp(database.metadata.displayYears[1]+'-12-31','23:59')-nowProvider())/DAY):0;
+      if(daysLeft<90)s.append(el('p','error',daysLeft<0?'انتهت تغطية المواقيت؛ استورد جدولًا جديدًا.':'تنتهي تغطية المواقيت خلال '+daysLeft+' يومًا؛ جهّز جدول السنة الجديدة.'));
+      s.append(el('p','notice',tr('تقويم أم القرى مدني ويتغير عند منتصف الليل. المنطقة الزمنية: ','Umm al-Qura civil dates change at midnight. Time zone: ')+ZONE+tr('. التغطية المحلية: ','. Local coverage: ')+calendar.rangeStart+' — '+calendar.rangeEnd));
+    }},
+    {id:'backup', title:'الحفظ والتشغيل', render(s){
+      s.append(el('p','notice',storageNote||'التخزين المحلي متاح لهذه الجلسة. يُنصح بتصدير نسخة احتياطية.'));
+      s.append(el('p','notice','قد يختلف حفظ الإعدادات تحت file:// باختلاف المتصفح. نقل الملف أو تغيير اسمه قد يغيّر مساحة التخزين. ملف JSON المصدّر هو النسخة الاحتياطية القابلة للنقل. لا يُكتب ملف index.html من المتصفح.'));
+      s.append(el('p','notice','الإعدادات: Ctrl + , أو زر الإعدادات. ملء الشاشة من الزر أو F11 في المتصفحات الداعمة. للخروج الاضطراري من السواد: Ctrl + Alt + M؛ يخص التجاوز فترة الصلاة الحالية فقط. اضبط ساعة الجهاز وأوقف السكون وشاشة التوقف من إعدادات النظام. لا يستطيع التطبيق غير المتصل مزامنة الساعة.'));
+    }}
+  ];
+  function settingsSection(page){
+    const source=el('section','settings-section');
+    source.append(el('h3',null,page.title));
+    page.render(source);
+    return source;
   }
   // TV_SETTINGS_UI_START — presentation only; the existing validated draft owns all mosque data.
   const tvMode=Boolean(window.MosqueAndroid);
-  let tvSections=[],tvSectionId='mosque',tvPane='menu',tvEditor=null,tvLastFocus='',tvScroll={},tvControlOrigin=false;
+  let tvSections=[],tvSectionId='mosque',tvPane='menu',tvEditor=null,tvLastFocus='',tvScroll={},tvControlOrigin=false,tvNativeRefreshPending=false;
   function tvKey(text){let hash=2166136261;for(let i=0;i<text.length;i++)hash=Math.imul(hash^text.charCodeAt(i),16777619);return(hash>>>0).toString(36);}
   function tvKeepSelectedMenuVisible(){const selected=$('tv-section-'+tvSectionId);if(selected&&selected.scrollIntoView)selected.scrollIntoView({block:'nearest',inline:'nearest'});}
   function tvFocus(id){const node=$(id);if(!node||node.disabled)return;try{node.focus({preventScroll:true});}catch(_){node.focus();}if(node.scrollIntoView)node.scrollIntoView({block:'nearest',inline:'nearest'});tvLastFocus=id;if(id.startsWith('tv-row-'))tvKeepSelectedMenuVisible();}
   function tvValue(row){const value=typeof row.value==='function'?row.value():row.value;return value===undefined||value===null?'':value;}
   function tvSummary(row){const value=tvValue(row);if(row.kind==='checkbox')return value?'نعم':'لا';if(row.kind==='select'){const choice=(row.options||[]).find(item=>String(item[0])===String(value));return choice?choice[1]:String(value);}return String(value).trim()||'غير محدد';}
-  function tvLegacySections(){
-    const names=['mosque','iqama','display','donation','data','backup'];
-    return Array.from($('settingsBody').children).filter(node=>node.classList.contains('settings-section')).map((source,index)=>{
-      const title=source.querySelector('h3').textContent,section={id:names[index]||'section-'+index,title,help:Array.from(source.querySelectorAll('.notice,.error')).map(node=>node.textContent).join('\n'),rows:[]},seen=new Map();
-      source.querySelectorAll('label.field,button').forEach(node=>{
-        const control=node.tagName==='BUTTON'?null:node.querySelector('input,select,textarea');if(!control&&node.tagName!=='BUTTON')return;
-        const caption=control?node.querySelector('span').textContent:node.textContent;
-        const group=node.closest('[data-tv-group]'),inline=node.closest('.inline');
-        let context=group?group.dataset.tvLabel:'';
-        if(!context&&control&&control.type==='checkbox'&&inline){const first=inline.querySelector('label.field span');if(first&&first.textContent!==caption)context=first.textContent;}
-        const base=section.id+'-'+(group?group.dataset.tvGroup:'')+'-'+tvKey(caption),count=seen.get(base)||0;seen.set(base,count+1);
-        const row={id:'tv-field-'+base+'-'+count,label:context?context+' — '+caption:caption,help:'',kind:'action'};
-        if(!control){row.action=()=>node.click();row.value='فتح';}
-        else{
-          row.kind=control.tagName==='SELECT'?'select':control.type==='checkbox'?'checkbox':control.type==='number'?'number':control.type==='date'?'date':control.type==='time'?'time':'text';
-          row.value=()=>row.kind==='checkbox'?control.checked:control.value;
-          row.options=row.kind==='select'?Array.from(control.options).map(option=>[option.value,option.textContent]):undefined;
-          row.min=control.min===''||control.min===undefined?-Infinity:Number(control.min);row.max=control.max===''||control.max===undefined?Infinity:Number(control.max);row.step=Number(control.step)||1;row.maxLength=control.maxLength>0?control.maxLength:1000;
-          row.help=row.kind==='number'?'يمين: زيادة، يسار: إنقاص. المجال '+row.min+' إلى '+row.max:row.kind==='time'?'الوقت بنظام 24 ساعة: HH:mm':row.kind==='date'?'التاريخ: YYYY-MM-DD':'اضغط OK للتحرير؛ الرجوع يلغي تحرير الحقل فقط.';
-          row.commit=value=>{if(row.kind==='checkbox')control.checked=Boolean(value);else control.value=value;control.dispatchEvent(new Event(row.kind==='select'?'change':'input',{bubbles:true}));};
-        }
-        section.rows.push(row);
-      });
-      if(section.id==='backup')for(const [id,label]of [['exportSettingsButton','تصدير إعدادات الجامع'],['importSettingsButton','استيراد إعدادات الجامع'],['exportTimetableButton','تصدير جدول المواقيت'],['importTimetableButton','استيراد جدول المواقيت'],['defaultsButton','استعادة الافتراضيات']])section.rows.push({id:'tv-action-'+id,label,kind:'action',value:'فتح',action:()=>$(id).click()});
-      return section;
+  function tvLegacySection(page){
+    const source=settingsSection(page);
+    const section={id:page.id,title:page.title,help:Array.from(source.querySelectorAll('.notice,.error')).map(node=>node.textContent).join('\n'),rows:[]},seen=new Map();
+    source.querySelectorAll('label.field,button').forEach(node=>{
+      const control=node.tagName==='BUTTON'?null:node.querySelector('input,select,textarea');if(!control&&node.tagName!=='BUTTON')return;
+      const caption=control?node.querySelector('span').textContent:node.textContent;
+      const group=node.closest('[data-tv-group]'),inline=node.closest('.inline');
+      let context=group?group.dataset.tvLabel:'';
+      if(!context&&control&&control.type==='checkbox'&&inline){const first=inline.querySelector('label.field span');if(first&&first.textContent!==caption)context=first.textContent;}
+      const base=section.id+'-'+(group?group.dataset.tvGroup:'')+'-'+tvKey(caption),count=seen.get(base)||0;seen.set(base,count+1);
+      const row={id:'tv-field-'+base+'-'+count,label:context?context+' — '+caption:caption,help:'',kind:'action'};
+      if(!control){row.action=()=>node.click();row.value='فتح';}
+      else{
+        row.kind=control.tagName==='SELECT'?'select':control.type==='checkbox'?'checkbox':control.type==='number'?'number':control.type==='date'?'date':control.type==='time'?'time':'text';
+        row.value=()=>row.kind==='checkbox'?control.checked:control.value;
+        row.options=row.kind==='select'?Array.from(control.options).map(option=>[option.value,option.textContent]):undefined;
+        row.min=control.min===''||control.min===undefined?-Infinity:Number(control.min);row.max=control.max===''||control.max===undefined?Infinity:Number(control.max);row.step=Number(control.step)||1;row.maxLength=control.maxLength>0?control.maxLength:1000;
+        row.help=row.kind==='number'?'يمين: زيادة، يسار: إنقاص. المجال '+row.min+' إلى '+row.max:row.kind==='time'?'الوقت بنظام 24 ساعة: HH:mm':row.kind==='date'?'التاريخ: YYYY-MM-DD':'اضغط OK للتحرير؛ الرجوع يلغي تحرير الحقل فقط.';
+        row.commit=value=>{if(row.kind==='checkbox')control.checked=Boolean(value);else control.value=value;control.dispatchEvent(new Event(row.kind==='select'?'change':'input',{bubbles:true}));};
+      }
+      section.rows.push(row);
     });
+    if(section.id==='backup')for(const [id,label]of [['exportSettingsButton','تصدير إعدادات الجامع'],['importSettingsButton','استيراد إعدادات الجامع'],['exportTimetableButton','تصدير جدول المواقيت'],['importTimetableButton','استيراد جدول المواقيت'],['defaultsButton','استعادة الافتراضيات']])section.rows.push({id:'tv-action-'+id,label,kind:'action',value:'فتح',action:()=>$(id).click()});
+    return section;
   }
   function tvRenderHub(preferredFocus){
     const oldList=$('tvSettingsRows');if(oldList)tvScroll[tvSectionId]=oldList.scrollTop;
@@ -509,7 +615,7 @@
     const back=button(tvPane==='menu'?'‹ مركز التحكم':'‹ كل الإعدادات',tvHandleBack);back.id='tvSettingsBack';back.className='tv-settings-back';hub.append(back);
     if(tvPane==='menu'){
       const menu=el('nav','tv-settings-menu');menu.setAttribute('aria-label','أقسام الإعدادات');
-      tvSections.forEach(section=>{const b=button(section.title,()=>{tvSectionId=section.id;tvPane='rows';tvRenderHub();tvFocus($('tvSettingsRows')?.querySelector('button:not([disabled])')?.id);});b.id='tv-section-'+section.id;b.className='tv-menu-item';b.classList.toggle('selected',section.id===tvSectionId);b.dataset.tvZone='menu';menu.append(b);});
+      tvSections.forEach(section=>{const b=button(section.title,()=>{tvSectionId=section.id;tvPane='rows';drawSettings();tvFocus($('tvSettingsRows')?.querySelector('button:not([disabled])')?.id);});b.id='tv-section-'+section.id;b.className='tv-menu-item';b.classList.toggle('selected',section.id===tvSectionId);b.dataset.tvZone='menu';menu.append(b);});
       hub.append(menu);
     }else{
       const pane=el('section','tv-settings-pane');pane.append(el('h3','tv-section-heading',current.title));
@@ -528,11 +634,20 @@
     tvKeepSelectedMenuVisible();
   }
   function drawSettings(){
+    tvNativeRefreshPending=false;
     const preferred=tvMode?(document.activeElement?.id||tvLastFocus):'';
     if(tvMode&&$('tvSettingsRows'))tvScroll[tvSectionId]=$('tvSettingsRows').scrollTop;
-    drawLegacySettings();if(!tvMode)return;
-    tvSections=tvLegacySections();
-    if(window.MosqueTVNative&&typeof window.MosqueTVNative.getSections==='function'){try{tvSections.push(...window.MosqueTVNative.getSections());}catch(_){message('تعذر قراءة بعض خيارات التلفاز؛ تبقى إعدادات الجامع متاحة.',true);}}
+    if(!tvMode){$('settingsBody').replaceChildren(...settingsPages.map(settingsSection));return;}
+    tvSections=settingsPages.map(page=>({id:page.id,title:page.title,rows:[]}));
+    const selectedPage=settingsPages.find(page=>page.id===tvSectionId);
+    if(window.MosqueTVNative&&typeof window.MosqueTVNative.getSections==='function'){
+      try{tvSections.push(...window.MosqueTVNative.getSections(tvPane==='menu'||Boolean(selectedPage)));}
+      catch(_){message('تعذر قراءة بعض خيارات التلفاز؛ تبقى إعدادات الجامع متاحة.',true);}
+    }
+    if(tvPane==='rows'){
+      const page=selectedPage||(!tvSections.some(item=>item.id===tvSectionId)&&settingsPages[0]);
+      if(page)tvSections[settingsPages.indexOf(page)]=tvLegacySection(page);
+    }
     $('settingsDialog').classList.add('tv-settings');$('defaultsButton').hidden=true;tvRenderHub(preferred);
   }
   function tvEditorValue(){if(!tvEditor)return;const node=$('tvEditorValue');if(node)node.textContent=String(tvEditor.temp);}
@@ -555,7 +670,16 @@
       if(typeof value==='string'&&value.length>(row.maxLength||1000)){tvEditorError('النص أطول من الحد المسموح.');return;}
     }
     tvEditor=null;$('tvEditor')?.remove();
-    try{if(commit)row.commit(value);drawSettings();tvFocus('tv-row-'+row.id);}catch(error){message(error.message,true);}
+    try{
+      if(commit)row.commit(value);
+      // Display choices have no dependent rows. Keep the same controls, focus and scroll.
+      if(tvNativeRefreshPending||(commit&&tvSectionId!=='display'))drawSettings();
+      else if(commit){
+        const valueNode=$('tv-row-'+row.id)?.querySelector('.tv-row-value');
+        if(valueNode)valueNode.textContent=tvSummary(row);
+      }
+      tvFocus('tv-row-'+row.id);
+    }catch(error){message(error.message,true);}
   }
   function tvOpenEditor(row){
     if(state?.phase==='PRAYER_MODE')return;tvEditor={row,temp:tvValue(row)};
@@ -583,7 +707,10 @@
       const control=el('input','tv-editor-input');control.id='tvEditorInput';control.type='text';control.value=String(tvEditor.temp);control.maxLength=row.maxLength||1000;if(row.kind==='date'){control.dir='ltr';control.inputMode='numeric';}card.append(control);initial=control.id;
     }
     const editorError=el('p','error');editorError.id='tvEditorError';editorError.setAttribute('role','status');card.append(editorError);
-    const actions=el('div','tv-editor-actions'),confirm=button('تأكيد',()=>tvCloseEditor(true)),cancel=button('إلغاء التعديل',()=>tvCloseEditor(false));confirm.id='tvEditorConfirm';cancel.id='tvEditorCancel';actions.append(confirm,cancel);card.append(actions);panel.append(card);$('settingsForm').append(panel);tvFocus(initial);
+    const actions=el('div','tv-editor-actions'),confirm=button('تأكيد',()=>tvCloseEditor(true)),cancel=button('إلغاء التعديل',()=>tvCloseEditor(false));confirm.id='tvEditorConfirm';cancel.id='tvEditorCancel';actions.append(confirm,cancel);card.append(actions);panel.append(card);$('settingsForm').append(panel);
+    // Native focus scrolls the selected choice into view, including long choice lists.
+    // A second explicit scroll here also lays out the settings behind the editor.
+    $(initial).focus();tvLastFocus=initial;
   }
   function tvMove(nodes,delta){const items=Array.from(nodes).filter(node=>!node.disabled&&!node.hidden);if(!items.length)return;const index=items.indexOf(document.activeElement);tvFocus(items[Math.max(0,Math.min(items.length-1,index<0?0:index+delta))].id);}
   function tvHandleBack(){
@@ -613,7 +740,7 @@
     if(active?.id==='tvSettingsBack'){if(key==='ArrowDown')tvFocus(tvPane==='menu'?'tv-section-'+tvSectionId:$('tvSettingsRows')?.querySelector('button:not([disabled])')?.id||'saveButton');return;}
     if(tvPane==='menu'){
       const items=Array.from($('settingsBody').querySelectorAll('.tv-menu-item'));
-      if(key==='ArrowLeft'){const focusedSection=tvSections.find(section=>'tv-section-'+section.id===active?.id);if(focusedSection)tvSectionId=focusedSection.id;tvPane='rows';tvRenderHub();tvFocus($('tvSettingsRows')?.querySelector('button:not([disabled])')?.id||'tvSettingsBack');}
+      if(key==='ArrowLeft'){const focusedSection=tvSections.find(section=>'tv-section-'+section.id===active?.id);if(focusedSection)tvSectionId=focusedSection.id;tvPane='rows';drawSettings();tvFocus($('tvSettingsRows')?.querySelector('button:not([disabled])')?.id||'tvSettingsBack');}
       else if(key==='ArrowUp'&&items.indexOf(active)===0)tvFocus('tvSettingsBack');
       else if(key==='ArrowDown'&&items.indexOf(active)===items.length-1)tvFocus('saveButton');
       else if(key==='ArrowUp'||key==='ArrowDown')tvMove(items,key==='ArrowUp'?-1:1);return;
@@ -624,7 +751,7 @@
   if(tvMode){
     document.addEventListener('keydown',tvHandleKey,true);
     document.addEventListener('focusin',event=>{if(event.target?.id?.startsWith('tv-row-')){tvLastFocus=event.target.id;tvPane='rows';}});
-    window.MosqueTV={isOpen:()=>settingsOpen,handleBack:tvHandleBack,toggleSettings:()=>settingsOpen?closeSettings(true):openSettings(),openSection:id=>openSettings(id,true),refreshNative:()=>{if(settingsOpen&&!tvEditor)drawSettings();},getUIState:()=>({section:tvSectionId,pane:tvPane,editing:tvEditor?tvEditor.row.id:null,focus:document.activeElement?.id||''})};
+    window.MosqueTV={isOpen:()=>settingsOpen,handleBack:tvHandleBack,toggleSettings:()=>settingsOpen?closeSettings(true):openSettings(),openSection:id=>openSettings(id,true),refreshNative:()=>{if(settingsOpen){if(tvEditor)tvNativeRefreshPending=true;else drawSettings();}},getUIState:()=>({section:tvSectionId,pane:tvPane,editing:tvEditor?tvEditor.row.id:null,focus:document.activeElement?.id||''})};
   }
   // TV_SETTINGS_UI_END
   function openSettings(section,fromControl){if(state?.phase==='PRAYER_MODE')return;if(settingsOpen)return;tvControlOrigin=Boolean(fromControl);if(typeof section==='string')tvSectionId=section;draft=clone(savedSettings);settingsOpen=true;document.body.classList.add('settings-open');tvPane=fromControl&&section!=='mosque'?'rows':'menu';$('settingsDialog').classList.remove('previewing');$('previewButton').textContent='معاينة';drawSettings();message('التغييرات مسودة؛ احفظها للاعتماد أو ارجع لإلغائها.');$('settingsDialog').showModal();if(tvMode)tvFocus(tvPane==='menu'?'tv-section-'+tvSectionId:$('tvSettingsRows')?.querySelector('button:not([disabled])')?.id||'tvSettingsBack');interaction();}
@@ -632,6 +759,7 @@
     const restorePreview=previewApplied;
     previewApplied=false;tvEditor=null;$('tvEditor')?.remove();settingsOpen=false;
     document.body.classList.remove('settings-open');draft=null;$('settingsDialog').close();
+    if(tvMode){tvSections=[];$('settingsBody').replaceChildren();}
     $('settingsDialog').classList.remove('previewing');$('previewButton').textContent='معاينة';
     if(window.MosqueTVNative?.onClose)window.MosqueTVNative.onClose();
     if(cancel){try{if(restorePreview)useSettings(savedSettings);else tick();}catch(error){message(error.message,true);}}

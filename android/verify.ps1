@@ -72,6 +72,15 @@ try {
     $jsonCount++
   }
   if ($jsonCount -ne 7 -or $data['prayer-data'].records.Count -ne 732) { throw 'Embedded schedule/data coverage missing.' }
+  $packagedGuide = $data['display-content-data'].prayerGuide
+  $sourceGuide = (Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $projectRoot 'dev/display-content.json') | ConvertFrom-Json).prayerGuide
+  if (-not $packagedGuide -or $packagedGuide.postPrayer.Count -lt 1 -or
+      ($packagedGuide | ConvertTo-Json -Depth 8 -Compress) -cne ($sourceGuide | ConvertTo-Json -Depth 8 -Compress)) {
+    throw 'Offline prayer guide in APK differs from the verified source.'
+  }
+  if ($data['config-data'].silentPhoneReminder -ne $true -or $data['config-data'].postPrayerMinutes -ne 5) {
+    throw 'Unexpected prayer reminder defaults in APK.'
+  }
   $setupCalendar = $data['setup-calendar-data']
   if ($setupCalendar.rangeStart -ne '1924-08-01' -or $setupCalendar.rangeEnd -ne '2077-11-16' -or $setupCalendar.months.Count -ne 1897) { throw 'Complete local setup calendar missing.' }
   $catalogHash = Byte-Hash (Read-ApkBytes 'assets/web/assets/data/location-catalog.js')
@@ -94,7 +103,7 @@ try {
     verifiedAt = [DateTime]::UtcNow.ToString('o'); apkSHA256 = $apkHash; apkBytes = (Get-Item -LiteralPath $apkPath).Length
     entryCount = $names.Count; minSdk = $build.minSdk; targetSdk = $build.targetSdk; versionName = $versionName; versionCode = $versionCode; tvLauncher = $true; homeCandidate = $true
     requestedPermissions = $permissions; updateRepository = 'adel2184/mosque-tv'; signatureV2 = $true; signatureV3 = $true; originalSigningIdentity = $true; coreScriptUnchanged = $true; tvBridgeMatchesSource = $true
-    packagedScriptHashes = $expectedSources.Count - 1; phonePageMatchesSource = $true
+    packagedScriptHashes = $expectedSources.Count - 1; phonePageMatchesSource = $true; postPrayerCards = $packagedGuide.postPrayer.Count
     embeddedJsonBlocks = $jsonCount; prayerRecords = 732; adhkar = $enabled.Count; originalQrSHA256 = $qrHash
     locationCatalogSHA256 = $catalogHash; setupCalendarStart = $setupCalendar.rangeStart; setupCalendarEnd = $setupCalendar.rangeEnd; setupCalendarMonthStarts = $setupCalendar.months.Count
     communityProfiles = $deviceProfiles.profiles.Count; communityProfilesSHA256 = $deviceProfilesHash; localReportAssetsMatch = $true; reportReceiver = 'https://mosque-tv-reports-adel2184.netlify.app/api/reports'

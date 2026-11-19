@@ -1,0 +1,115 @@
+.clock-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 20px;
+  min-height: 25px;
+}
+.info-hidden .clock-meta { justify-content: center; }
+/* Reserve room for all six timetable rows and the Arabic font's lower accents. */
+.prayer-table { margin-top: 8px; border-spacing: 0 5px; }
+#ramadanPill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 12px;
+  border: 1px solid #99865c;
+  border-radius: 28px;
+  padding: 1px 16px;
+  background: #23352b;
+  color: #f4e2b0;
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+#ramadanTime { font-weight: 650; font-variant-numeric: tabular-nums; }
+.phone-reminder {
+  color: #faedc7;
+  background: #3b3526;
+  border: 1px solid #bb9f60;
+  border-radius: 12px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.5;
+}
+#phoneReminder { padding: 9px 14px; margin: 14px 22px 0; font-size: 25px; }
+#rowsPhoneReminder, #rowsKhutbah {
+  position: absolute;
+  max-width: 89vw;
+  font-size: min(3.5vw, 5vh);
+  line-height: 1.45;
+}
+#rowsPhoneReminder { bottom: 4vh; padding: 0.15em 0.9em; }
+#rowsKhutbah { top: 3.5vh; color: #e4c98f; }
+
+#postPrayerDisplay {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 32px 64px 42px;
+  border: 1px solid #52644d;
+  border-radius: 22px;
+  background: #112b24;
+  color: #f8f0d9;
+  text-align: center;
+}
+#postPrayerDisplay h2 {
+  align-self: flex-start;
+  margin: 0;
+  color: #d8c48e;
+  font-size: 30px;
+  line-height: 1.5;
+  font-weight: 500;
+}
+.post-prayer-card {
+  margin: auto;
+  width: 100%;
+  max-width: 1580px;
+}
+#postPrayerTitle { margin: 0 0 20px; color: #ead9a6; font-size: 40px; font-weight: 500; }
+#postPrayerText { margin: 0; font-size: 78px; font-weight: 500; line-height: 1.85; white-space: pre-line; }
+#postPrayerText.long-dhikr { font-size: 54px; line-height: 1.85; }
+#postPrayerNote { margin: 20px 0 0; color: #cfdbc9; font-size: 30px; line-height: 1.55; }
+
+.mosque-ticker.contextual { min-height: 86px; height: 86px; }
+.mosque-ticker.contextual::before, .mosque-ticker.contextual::after { display: none; }
+#contextTicker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  height: 100%;
+  padding: 0 32px;
+  text-align: center;
+}
+#visitReminder {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+}
+.visit-dua { display: flex; align-items: baseline; justify-content: center; gap: 18px; }
+#visitLabel { color: #d2bb82; font-size: 24px; font-weight: 600; }
+#visitText { color: #f7edd0; font-size: 35px; line-height: 1.45; }
+#exitReminder { padding-inline-start: 24px; border-inline-start: 1px solid #577056; color: #d0daca; font-size: 22px; line-height: 1.45; }
+#fridayReminders {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0 30px;
+  color: #ebdcaf;
+  font-size: 29px;
+  line-height: 1.45;
+}
+#visitReminder:not([hidden]) + #fridayReminders {
+  display: grid;
+  border-inline-start: 1px solid #577056;
+  padding-inline-start: 30px;
+  font-size: 24px;
+}
+
+/* The editor fills the dialog. Its initial focus should lay out only the editor. */
+.tv-editor { contain: strict; }

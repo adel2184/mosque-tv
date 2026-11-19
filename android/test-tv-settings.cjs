@@ -62,6 +62,49 @@ function runtime(){
 }
 
 test('Actual TV hub opens with stable sections and the gear is inside the safe header',()=>{const app=runtime();app.open();eq(app.window.MosqueTV.isOpen(),true);eq(app.window.TEST.sections().length,11);eq(app.document.activeElement.id,'tv-section-mosque');const shell=fs.readFileSync(path.join(root,'dev/shell.html'),'utf8');assert(shell.indexOf('id="settingsButton"')>shell.indexOf('id="dashboardHeader"'));assert(shell.indexOf('id="settingsButton"')<shell.indexOf('class="identity-area"'));eq((shell.match(/id="settingsButton"/g)||[]).length,1);});
+test('TV builds only the requested form and reads native status when entering device settings',()=>{
+  const app=runtime(),created=[];
+  const create=app.document.createElement;
+  app.document.createElement=tag=>{created.push(tag);return create(tag);};
+  let homeReads=0;
+  const home=app.window.MosqueAndroid.homeStatus;
+  app.window.MosqueAndroid.homeStatus=()=>{homeReads++;return home();};
+  app.open();
+  eq(created.filter(tag=>tag==='input'||tag==='select').length,0);
+  eq(homeReads,0);
+  app.section('display');
+  eq(created.filter(tag=>tag==='input'||tag==='select').length,4);
+  eq(homeReads,0);
+  app.section('tv-home');
+  eq(homeReads,1);
+  app.event('mosque-native-update-result',{});
+  eq(homeReads,2);
+  app.window.MosqueTV.toggleSettings();
+  eq(app.window.TEST.sections().length,0);
+  eq(app.get('settingsBody').children.length,0);
+});
+test('The remote changes the phone reminder and adhkar duration, restores focus and saves both offline',()=>{
+  const app=runtime();app.open();
+  app.key('ArrowDown');app.key('ArrowDown');eq(app.document.activeElement.id,'tv-section-display');
+  app.key('Enter');app.key('ArrowDown');app.key('ArrowDown');
+  const reminder=app.row('display','تنبيه إغلاق الجوالات'),duration=app.row('display','مدة عرض أذكار ما بعد الصلاة');
+  const originalList=app.get('tvSettingsRows'),originalReminder=app.get(reminder),originalDuration=app.get(duration);
+  eq(app.document.activeElement.id,reminder);app.key('Enter');eq(app.document.activeElement.id,'tv-choice-0');
+  app.key('ArrowDown');app.key('Enter');eq(app.window.TEST.draft().silentPhoneReminder,false);eq(app.document.activeElement.id,reminder);
+  assert(app.get('tvSettingsRows')===originalList&&app.get(reminder)===originalReminder);
+  eq(originalReminder.querySelector('.tv-row-value').textContent,'لا');
+  app.key('ArrowDown');eq(app.document.activeElement.id,duration);app.key('Enter');
+  eq(app.document.activeElement.id,'tv-choice-2');eq(app.get('tv-choice-0').textContent,'إيقاف');
+  app.key('ArrowDown');app.back();eq(app.window.TEST.draft().postPrayerMinutes,5);eq(app.document.activeElement.id,duration);
+  assert(app.get('tvSettingsRows')===originalList&&app.get(duration)===originalDuration);
+  app.key('Enter');app.key('ArrowUp');app.key('ArrowUp');app.key('Enter');
+  eq(app.window.TEST.draft().postPrayerMinutes,0);eq(app.document.activeElement.id,duration);
+  assert(app.get(duration)===originalDuration);eq(originalDuration.querySelector('.tv-row-value').textContent,'إيقاف');
+  eq(app.window.TEST.saved().silentPhoneReminder,true);eq(app.window.TEST.saved().postPrayerMinutes,5);
+  app.key('ArrowDown');eq(app.document.activeElement.id,'saveButton');app.key('Enter');
+  const saved=JSON.parse(app.stored.get('test'));eq(saved.silentPhoneReminder,false);eq(saved.postPrayerMinutes,0);
+  eq(app.window.MosqueTV.isOpen(),false);eq(app.calls.length,0);
+});
 test('Entering native categories skips disabled status rows and focuses the first editable action',()=>{const app=runtime();app.open();for(const [section,label]of [['tv-power','وضع تشغيل'],['tv-home','اختيار التطبيق'],['tv-update','إلغاء مهمة']]){app.section(section);const expected=app.row(section,label);if(section==='tv-update'){assert(app.document.activeElement.id.startsWith('tv-row-'));assert(!app.document.activeElement.disabled);}else eq(app.document.activeElement.id,expected);assert(!app.document.activeElement.id.startsWith('tv-section-'));}});
 test('Number arrows are staged; Back discards the field edit and restores the same row',()=>{const app=runtime();app.open();app.section('iqama');const row=app.row('iqama','الفجر');app.click(row);app.key('ArrowRight');eq(app.get('tvEditorValue').textContent,'26');eq(app.window.TEST.draft().iqama.offsets.fajr,25);app.back();eq(app.window.TEST.draft().iqama.offsets.fajr,25);eq(app.document.activeElement.id,row);eq(app.get('tvEditor'),null);});
 test('OK commits the numeric draft; save uses the actual validator and original persistence handler',()=>{const app=runtime();app.open();app.section('iqama');app.click(app.row('iqama','الفجر'));app.key('ArrowRight');app.click('tvEditorConfirm');eq(app.window.TEST.draft().iqama.offsets.fajr,26);eq(app.window.TEST.saved().iqama.offsets.fajr,25);app.click('saveButton');eq(app.window.TEST.saved().iqama.offsets.fajr,26);eq(JSON.parse(app.stored.get('test')).iqama.offsets.fajr,26);eq(app.window.MosqueTV.isOpen(),false);});

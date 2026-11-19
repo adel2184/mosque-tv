@@ -84,16 +84,89 @@ test('Eighteen nonempty rotating adhkar retain repeated texts and exclude the pe
 });
 const events=base.api.buildEvents(base.api.database,base.api.defaults).filter(event=>event.date==='2026-11-16');
 equal(events.length,5);
+const displayContent=JSON.parse(embedded.get('display-content-data')), guide=displayContent.prayerGuide;
 for(const event of events)test('All exact state/content boundaries for '+event.prayer,()=>{
-  const app=createRuntime(event.adhan-1000);equal(app.api.getContentMode(),'slides');assert(!app.api.getTickerState().hidden&&!app.api.getTickerState().paused);
-  app.setNow(event.adhan);equal(app.api.getState().phase,'WAITING_FOR_IQAMA');equal(app.api.getContentMode(),'adhan');const content=app.document.getElementById('slideContent').textContent;assert(content.trim());assert(/الدعوة|الوسيلة|محمد/.test(content),'Stationary post-adhan dua was not rendered');const index=app.api.getSlidesState().index;
-  for(const moment of [event.adhan+1000,Math.floor((event.adhan+event.iqama)/2),event.iqama-1000]){app.setNow(moment);equal(app.api.getContentMode(),'adhan');equal(app.document.getElementById('slideContent').textContent,content);equal(app.api.getSlidesState().index,index);assert(!app.api.getTickerState().hidden&&!app.api.getTickerState().paused);}
-  app.setNow(event.iqama);equal(app.api.getState().phase,'PRAYER_MODE');equal(app.api.getContentMode(),'prayer');assert(!app.document.getElementById('prayerOverlay').hidden);assert(app.api.getTickerState().hidden&&app.api.getTickerState().paused);
-  const track=app.document.getElementById('tickerTrack'),measurements=track.style._writes.length;equal(track.children[0].scrollWidth,0,'Hidden-cycle measurement must simulate display:none');app.emit('resize');equal(track.style._writes.length,measurements,'Resize while hidden must not replace ticker distance with zero');
-  app.setNow(event.end-1);equal(app.api.getContentMode(),'prayer');app.setNow(event.end);equal(app.api.getContentMode(),'slides');assert(app.document.getElementById('prayerOverlay').hidden);assert(!app.api.getTickerState().hidden&&!app.api.getTickerState().paused);assert(track.style._writes.length>measurements&&parseFloat(track.style['--ticker-distance'])>0,'Resumed ticker must be remeasured at a positive simulated width');equal(app.document.getElementById('slideProgress').style.width,'0%');equal(app.api.getSlidesState().count,18);const resumed=app.api.getSlidesState().index;app.setNow(event.end+19999);equal(app.api.getSlidesState().index,resumed);app.setNow(event.end+20000);equal(app.api.getSlidesState().index,(resumed+1)%18);
+  const app=createRuntime(event.adhan-1000),node=id=>app.document.getElementById(id);
+  equal(app.api.getContentMode(),'slides');assert(!app.api.getTickerState().hidden&&!app.api.getTickerState().paused);
+  app.setNow(event.adhan);equal(app.api.getState().phase,'WAITING_FOR_IQAMA');equal(app.api.getContentMode(),'adhan');
+  const content=node('slideContent').textContent;assert(content.includes(displayContent.postAdhan.text));
+  equal(node('visitText').textContent,guide.entrance);assert(!node('visitReminder').hidden&&node('tickerViewport').hidden);
+  const index=app.api.getSlidesState().index;
+  for(const moment of [event.adhan+1000,Math.floor((event.adhan+event.iqama)/2),event.iqama-1000]){
+    app.setNow(moment);equal(app.api.getContentMode(),'adhan');equal(node('slideContent').textContent,content);
+    equal(app.api.getSlidesState().index,index);assert(!app.api.getTickerState().hidden&&app.api.getTickerState().paused);
+  }
+  app.setNow(event.iqama-120001);assert(node('phoneReminder').hidden);
+  app.setNow(event.iqama-120000);assert(!node('phoneReminder').hidden);equal(node('phoneReminder').textContent,'الرجاء إغلاق الجوالات أو وضعها على الصامت');
+  app.setNow(event.iqama);equal(app.api.getState().phase,'PRAYER_MODE');equal(app.api.getContentMode(),'prayer');
+  assert(!node('prayerOverlay').hidden&&!node('rowsPhoneReminder').hidden);assert(app.api.getTickerState().hidden&&app.api.getTickerState().paused);
+  app.setNow(event.iqama+10000);assert(node('rowsPhoneReminder').hidden);
+  const track=node('tickerTrack'),measurements=track.style._writes.length;
+  equal(track.children[0].scrollWidth,0);app.emit('resize');equal(track.style._writes.length,measurements);
+  app.setNow(event.end-1);equal(app.api.getContentMode(),'prayer');
+  app.setNow(event.end);equal(app.api.getContentMode(),'post-prayer');assert(node('prayerOverlay').hidden&&!node('postPrayerDisplay').hidden);
+  assert(node('mainDashboard').hidden);equal(node('postPrayerText').textContent,guide.postPrayer[0].text);
+  const endOfAdhkar=event.end+5*60000,dwell=Math.min(30000,5*60000/guide.postPrayer.length);
+  guide.postPrayer.forEach((card,i)=>{app.setNow(event.end+i*dwell);equal(node('postPrayerText').textContent,card.text);equal(node('postPrayerNote').textContent,card.note.ar);});
+  app.setNow(endOfAdhkar-1);equal(app.api.getContentMode(),'post-prayer');
+  app.setNow(endOfAdhkar);equal(app.api.getContentMode(),'slides');assert(node('postPrayerDisplay').hidden&&!node('mainDashboard').hidden);
+  assert(!node('visitReminder').hidden&&!node('exitReminder').hidden);equal(node('visitText').textContent,guide.exit);
+  equal(node('exitReminder').textContent,guide.exitReminder.ar);
+  equal(node('slideProgress').style.width,'0%');equal(app.api.getSlidesState().count,18);
+  const resumed=app.api.getSlidesState().index;
+  app.setNow(endOfAdhkar+19999);equal(app.api.getSlidesState().index,resumed);
+  app.setNow(endOfAdhkar+20000);equal(app.api.getSlidesState().index,(resumed+1)%18);
+  app.setNow(endOfAdhkar+10*60000-1);assert(!node('visitReminder').hidden);
+  app.setNow(endOfAdhkar+10*60000);assert(node('contextTicker').hidden&&!node('tickerViewport').hidden);
+  assert(track.style._writes.length>measurements&&parseFloat(track.style['--ticker-distance'])>0,'Resumed ticker must be remeasured at a positive simulated width');
 });
 test('Reload/focus/sleep-like jumps within the adhan wait restore the same stationary dua',()=>{
-  const event=events[1],moment=event.adhan+Math.floor((event.iqama-event.adhan)/2),app=createRuntime(moment);equal(app.api.getContentMode(),'adhan');const content=app.document.getElementById('slideContent').textContent;app.emit('focus');app.emit('visibilitychange');equal(app.api.getContentMode(),'adhan');equal(app.document.getElementById('slideContent').textContent,content);app.setNow(events[4].adhan+1000);equal(app.api.getContentMode(),'adhan');app.setNow(events[4].end+1000);equal(app.api.getContentMode(),'slides');app.setNow(moment);equal(app.api.getContentMode(),'adhan');equal(app.document.getElementById('slideContent').textContent,content);
+  const event=events[1],moment=event.adhan+Math.floor((event.iqama-event.adhan)/2),app=createRuntime(moment);equal(app.api.getContentMode(),'adhan');const content=app.document.getElementById('slideContent').textContent;app.emit('focus');app.emit('visibilitychange');equal(app.api.getContentMode(),'adhan');equal(app.document.getElementById('slideContent').textContent,content);app.setNow(events[4].adhan+1000);equal(app.api.getContentMode(),'adhan');app.setNow(events[4].end+1000);equal(app.api.getContentMode(),'post-prayer');app.setNow(moment);equal(app.api.getContentMode(),'adhan');equal(app.document.getElementById('slideContent').textContent,content);
+});
+test('Disabling phone alerts and post-prayer cards preserves rows and starts the exit reminder at prayer end',()=>{
+  const event=events[0],app=createRuntime(event.adhan),node=id=>app.document.getElementById(id);
+  app.api.useSettings({...app.api.defaults,silentPhoneReminder:false,postPrayerMinutes:0});
+  app.setNow(event.iqama-1);assert(node('phoneReminder').hidden&&!node('visitReminder').hidden);
+  app.setNow(event.iqama);assert(node('rowsPhoneReminder').hidden&&!node('prayerOverlay').hidden);
+  app.setNow(event.end);equal(app.api.getContentMode(),'slides');assert(node('postPrayerDisplay').hidden&&!node('exitReminder').hidden);
+  app.setNow(event.end+10*60000);assert(node('exitReminder').hidden&&!node('tickerViewport').hidden);
+});
+test('Real timetable: Friday in Ramadan keeps the two Friday reminders, fasting countdown and prayer cues independent',()=>{
+  const app=createRuntime(stamp('2026-02-20T04:00:00')),node=id=>app.document.getElementById(id);
+  const day=app.api.buildEvents(app.api.database,app.api.defaults).filter(e=>e.date==='2026-02-20');
+  const [fajr,dhuhr,,maghrib]=day;
+  app.setNow(fajr.adhan-1000);assert(!node('ramadanPill').hidden);equal(node('ramadanLabel').textContent,'المتبقي للإمساك (الفجر)');
+  equal(node('ramadanTime').textContent,'00:00:01');assert(node('fridayReminders').hidden);
+  app.setNow(fajr.adhan);equal(node('ramadanLabel').textContent,'المتبقي للإفطار');
+  assert(!node('fridayReminders').hidden&&!node('fridayBlessings').hidden&&!node('visitReminder').hidden);
+  equal(node('fridayMessage').textContent,guide.fridayKahf);equal(node('fridayBlessings').textContent,guide.fridayBlessings);
+  app.setNow(fajr.end);assert(!node('postPrayerDisplay').hidden&&!node('fridayReminders').hidden&&!node('mosqueTicker').hidden);
+  app.setNow(dhuhr.adhan);assert(!node('fridayReminders').hidden&&node('fridayBlessings').hidden);equal(node('fridayMessage').textContent,guide.khutbah);
+  equal(node('countdownLabel').textContent,'المتبقي على إقامة الجمعة');
+  equal(node('prayerRows').children[2].querySelector('th').textContent,'الجمعة');
+  app.setNow(dhuhr.iqama);assert(!node('rowsKhutbah').hidden);equal(node('rowsKhutbah').textContent,guide.khutbah);
+  app.setNow(dhuhr.end);assert(node('fridayReminders').hidden&&node('rowsKhutbah').hidden);
+  app.setNow(maghrib.adhan-1);equal(node('ramadanTime').textContent,'00:00:01');
+  app.setNow(maghrib.adhan);equal(node('ramadanLabel').textContent,'المتبقي للإمساك (الفجر)');
+  app.setNow(stamp('2026-11-16T08:00:00'));assert(node('ramadanPill').hidden&&node('fridayReminders').hidden);
+  equal(node('prayerRows').children[2].querySelector('th').textContent,'الظهر');
+});
+test('Fixed-clock display ticks perform no DOM writes across every new scene, including Friday in Ramadan',()=>{
+  const app=createRuntime(stamp('2026-02-20T10:15:00')),node=id=>app.document.getElementById(id);
+  const event=app.api.buildEvents(app.api.database,app.api.defaults).find(e=>e.date==='2026-02-20'&&e.prayer==='dhuhr');
+  let writes=0;
+  for(const id of ['mosqueTicker','tickerViewport','contextTicker','visitReminder','visitText','visitLabel','exitReminder',
+    'fridayReminders','fridayMessage','fridayBlessings','phoneReminder','rowsPhoneReminder','rowsKhutbah',
+    'postPrayerDisplay','postPrayerHeading','postPrayerTitle','postPrayerText','postPrayerNote','ramadanPill','ramadanTime','ramadanLabel']){
+    const element=node(id),text=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element),'textContent');
+    Object.defineProperty(element,'textContent',{get(){return text.get.call(this);},set(v){writes++;text.set.call(this,v);}});
+    let hidden=element.hidden;Object.defineProperty(element,'hidden',{get(){return hidden;},set(v){writes++;hidden=v;}});
+    const toggle=element.classList.toggle;element.classList.toggle=(...args)=>{writes++;return toggle(...args);};
+  }
+  for(const when of [event.adhan-1,event.adhan,event.iqama-120000,event.iqama,event.iqama+10000,event.end,event.end+60000,event.end+300000,event.end+900000]){
+    app.setNow(when);writes=0;for(let i=0;i<12;i++)app.api.tick();equal(writes,0,'Redundant write at '+when);
+  }
+  equal(app.intervals.length,1);
 });
 test('A full normal rotation visits all eighteen entries in order and preserves repeat instructions',()=>{
   const app=createRuntime(stamp('2026-11-16T08:00:00')),seen=[];app.api.setSlides(manifest);app.setNow(stamp('2026-11-16T08:00:00'));for(let i=0;i<18;i++){seen.push(app.document.getElementById('slideContent').textContent);assert(seen[i].includes(manifest[i].text),'Rotation changed entry order at '+i);if(manifest[i].repeat)equal(app.document.getElementById('slideContent').querySelector('.slide-reference').textContent,manifest[i].repeat);app.setNow(app.now()+20000);}equal(app.api.getSlidesState().index,0);
@@ -101,8 +174,8 @@ test('A full normal rotation visits all eighteen entries in order and preserves 
 test('Donation defaults are visible and legacy schema-version-one settings receive compatible defaults',()=>{
   const app=createRuntime(),state=app.api.getDonationState();equal(app.api.defaults.schemaVersion,1);equal(state.visible,true);equal(state.hidden,false);equal(state.title,'تجديد الفرش وإعادة تنجيد سنادات الظهر');assert(state.description.trim().length>0);equal(state.description,app.api.defaults.donation.description);const old=clone(app.api.defaults);delete old.donation;const imported=app.api.validateSettings(old);equal(JSON.stringify(imported.donation),JSON.stringify(app.api.defaults.donation));
 });
-test('Permanent donation card survives all eighteen slides and all five adhan waits, hiding only during prayer',()=>{
-  const app=createRuntime(stamp('2026-11-16T08:00:00')),image=app.document.getElementById('donationQR'),source=app.api.getDonationState().source;for(let index=0;index<18;index++){equal(app.api.getDonationState().hidden,false);equal(app.document.getElementById('donationQR'),image);equal(app.api.getDonationState().source,source);app.setNow(app.now()+20000);}for(const event of events){for(const moment of [event.adhan-1,event.adhan,event.iqama-1]){app.setNow(moment);equal(app.api.getDonationState().hidden,false);}app.setNow(event.iqama);equal(app.api.getDonationState().hidden,true);app.setNow(event.end);equal(app.api.getDonationState().hidden,false);equal(app.document.getElementById('donationQR'),image);}
+test('Permanent donation card survives all eighteen slides and all five adhan waits, hiding during prayer and post-prayer',()=>{
+  const app=createRuntime(stamp('2026-11-16T08:00:00')),image=app.document.getElementById('donationQR'),source=app.api.getDonationState().source;for(let index=0;index<18;index++){equal(app.api.getDonationState().hidden,false);equal(app.document.getElementById('donationQR'),image);equal(app.api.getDonationState().source,source);app.setNow(app.now()+20000);}for(const event of events){for(const moment of [event.adhan-1,event.adhan,event.iqama-1]){app.setNow(moment);equal(app.api.getDonationState().hidden,false);}app.setNow(event.iqama);equal(app.api.getDonationState().hidden,true);app.setNow(event.end);equal(app.api.getDonationState().hidden,true);app.setNow(event.end+5*60000);equal(app.api.getDonationState().hidden,false);equal(app.document.getElementById('donationQR'),image);}
 });
 test('Packaged donation QR matches the independently recorded original hash and original bytes when available',()=>{
   const app=createRuntime(),source=app.api.getDonationState().source;

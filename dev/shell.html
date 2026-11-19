@@ -41,10 +41,13 @@
     <div class="clock-block">
       <div class="clock-main" aria-label="الوقت الآن"><time id="clockTime" dir="ltr">--:--:--</time><span id="clockPeriod">م</span></div>
       <div class="dates"><span id="weekday"></span><span class="date-divider" aria-hidden="true"></span><span id="hijriDate"></span><span class="date-divider" aria-hidden="true"></span><span id="gregorianDate"></span></div>
-      <div class="city-line">بتوقيت المملكة العربية السعودية</div>
+      <div class="clock-meta">
+        <div class="city-line">بتوقيت المملكة العربية السعودية</div>
+        <div id="ramadanPill" hidden><span id="ramadanLabel" dir="auto"></span><time id="ramadanTime" dir="ltr"></time></div>
+      </div>
     </div>
   </header>
-  <section class="dashboard" aria-label="المواقيت والتذكيرات">
+  <section id="mainDashboard" class="dashboard" aria-label="المواقيت والتذكيرات">
     <section class="prayers-panel" aria-label="مواقيت الصلاة">
       <div class="countdown-card">
         <div class="countdown-copy"><p id="countdownLabel">جارٍ التحقق من بيانات المواقيت</p><div id="countdownValue" dir="ltr">--:--:--</div><div class="next-date" id="nextDateLabel"></div></div>
@@ -54,6 +57,7 @@
     </section>
     <section class="slides-panel" aria-label="تذكيرات وإعلانات الجامع">
       <div class="slide-topline"><span class="section-rule" aria-hidden="true"></span><span>تذكير وطمأنينة</span></div>
+      <p id="phoneReminder" class="phone-reminder" dir="auto" hidden></p>
       <div id="slideContent"><div class="text-slide"><p class="slide-kicker">من آداب المسجد</p><p class="slide-text">أقبل على صلاتك بسكينة،<br>واترك ما يشغلك عنها.</p><p class="slide-reference">تذكير عام</p></div></div>
       <div class="slide-bottomline"><span class="slide-footnote"><svg aria-hidden="true" viewBox="0 0 20 20" fill="none"><path d="m10 1 2.6 6.4L19 10l-6.4 2.6L10 19l-2.6-6.4L1 10l6.4-2.6Z" stroke="currentColor"/></svg><span>لحظات هادئة في رحاب الجامع</span></span><span id="slideCounter">١ / ١</span></div>
       <div id="slideProgress" aria-hidden="true"></div>
@@ -66,14 +70,37 @@
       <p id="donationError" hidden>تعذر عرض رمز التبرع. تحقق من وجود الصورة المحلية المرفقة ثم أعد فتح الشاشة.</p>
     </section>
   </section>
-  <section id="mosqueTicker" class="mosque-ticker" aria-label="دعاء دخول المسجد والخروج منه" aria-live="off"><div id="tickerViewport" tabindex="0" aria-label="شريط الأذكار؛ يتوقف عند التركيز عليه"><div id="tickerTrack" class="ticker-track"></div></div></section>
+  <section id="postPrayerDisplay" aria-labelledby="postPrayerHeading" hidden>
+    <h2 id="postPrayerHeading" dir="auto"></h2>
+    <div class="post-prayer-card">
+      <h3 id="postPrayerTitle" dir="auto"></h3>
+      <p id="postPrayerText" lang="ar" dir="rtl"></p>
+      <p id="postPrayerNote" dir="auto"></p>
+    </div>
+  </section>
+  <section id="mosqueTicker" class="mosque-ticker" aria-label="دعاء دخول المسجد والخروج منه" aria-live="off">
+    <div id="tickerViewport" tabindex="0" aria-label="شريط الأذكار؛ يتوقف عند التركيز عليه"><div id="tickerTrack" class="ticker-track"></div></div>
+    <div id="contextTicker" hidden>
+      <div id="visitReminder" hidden>
+        <div class="visit-dua"><strong id="visitLabel" dir="auto"></strong><span id="visitText" lang="ar" dir="rtl"></span></div>
+        <span id="exitReminder" dir="auto" hidden></span>
+      </div>
+      <aside id="fridayReminders" lang="ar" dir="rtl" hidden>
+        <span id="fridayMessage"></span><span id="fridayBlessings" hidden></span>
+      </aside>
+    </div>
+  </section>
   <footer id="displayStatus" class="footer" hidden><div class="status-group"><span id="dataStatus" class="status"></span><span id="iqamaStatus" class="status" hidden></span></div></footer>
 </main>
 <nav id="controls" class="controls" aria-label="أدوات الشاشة">
 
   <button id="fullscreenButton" type="button"><svg aria-hidden="true" viewBox="0 0 20 20" fill="none"><path d="M3 7V3h4m6 0h4v4M3 13v4h4m6 0h4v-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>ملء الشاشة</button>
 </nav>
-<div id="prayerOverlay" hidden role="status" aria-live="off"><p><span class="prayer-call-line">أقيموا</span> <span class="prayer-call-line">صفوفكم</span></p></div>
+<div id="prayerOverlay" hidden role="status" aria-live="off">
+  <span id="rowsKhutbah" lang="ar" dir="rtl" hidden></span>
+  <p><span class="prayer-call-line">أقيموا</span> <span class="prayer-call-line">صفوفكم</span></p>
+  <span id="rowsPhoneReminder" class="phone-reminder" dir="auto" hidden></span>
+</div>
 <dialog id="settingsDialog" aria-labelledby="settingsTitle">
   <form id="settingsForm" novalidate>
     <header class="settings-header"><h2 id="settingsTitle">إعدادات شاشة الجامع</h2><p>عدّل البيانات ثم عاين النتيجة. لا تُحفظ التغييرات إلا عند اختيار «حفظ وتطبيق».</p></header>

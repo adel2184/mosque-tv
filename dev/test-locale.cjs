@@ -46,6 +46,18 @@ function fixture(){
   const app={doc,win,el,stage,settings,cc,row,events,observers,flush(){let runs=0;while(pending.length){assert.ok(++runs<100,'Translation observer did not settle');for(const callback of pending.splice(0))callback();}},load(){vm.runInNewContext(source,win,{filename:file,timeout:3000});app.locale=win.MosqueLocale;return app;}};return app;
 }
 const tests=[];function test(name,run){tests.push({name,run});}
+test('Phone and post-prayer settings localize their TV rows, selected value and choice buttons in both directions',()=>{
+  const app=fixture(),phone=app.row('phone','checkbox','تنبيه إغلاق الجوالات','نعم'),duration=app.row('duration','select','مدة عرض أذكار ما بعد الصلاة','5 دقائق');
+  const choices=['إيقاف','3 دقائق','5 دقائق','7 دقائق'].map(label=>app.el('button',label,'tv-choice'));
+  app.settings.append(...choices);app.load();app.locale.set('en');app.flush();
+  assert.equal(phone.querySelector('.tv-row-label').textContent,'Silent phone reminder');
+  assert.equal(duration.querySelector('.tv-row-label').textContent,'Post-prayer adhkar duration');
+  assert.equal(duration.querySelector('.tv-row-value').textContent,'5 minutes');
+  assert.deepEqual(choices.map(node=>node.textContent),['Off','3 minutes','5 minutes','7 minutes']);
+  app.locale.set('ar');app.flush();assert.equal(phone.querySelector('.tv-row-value').textContent,'نعم');
+  assert.equal(duration.querySelector('.tv-row-label').textContent,'مدة عرض أذكار ما بعد الصلاة');
+  assert.deepEqual(choices.map(node=>node.textContent),['إيقاف','3 دقائق','5 دقائق','7 دقائق']);
+});
 test('Language selection changes only UI language and keeps the mosque stage RTL',()=>{const app=fixture().load();assert.equal(app.locale.t('معاينة','Custom preview'),'معاينة');app.locale.set('en');assert.equal(app.doc.documentElement.lang,'en');assert.equal(app.doc.documentElement.dir,'ltr');assert.equal(app.stage.dir,'rtl');assert.equal(app.settings.dir,'ltr');assert.equal(app.locale.t('معاينة','Custom preview'),'Custom preview');assert.equal(app.locale.t('حفظ وتطبيق'),'Save and apply');assert.equal(app.events.at(-1).detail.language,'en');});
 test('Known captions translate while mosque, donation, and custom field values remain literal',()=>{const app=fixture(),name=app.row('tv-row-name','text','اسم الجامع','الشبكة'),donation=app.row('tv-row-donation','text','عنوان مشروع التبرع','حفظ وتطبيق'),custom=app.row('tv-row-custom','text','الحقل الإضافي 1 — نص إضافي','تأكيد');app.load();app.locale.set('en');assert.equal(name.querySelector('.tv-row-label').textContent,'Mosque name');assert.equal(name.querySelector('.tv-row-value').textContent,'الشبكة');assert.equal(donation.querySelector('.tv-row-value').textContent,'حفظ وتطبيق');assert.equal(custom.querySelector('.tv-row-value').textContent,'تأكيد');assert.equal(custom.querySelector('.tv-row-label').textContent,'Custom field 1 — Additional text');});
 test('Structured checkbox, select, action, and information values translate without changing numeric or time values',()=>{const app=fixture(),rows=[app.row('tv-row-flag','checkbox','إظهار بطاقة التبرع','نعم'),app.row('tv-row-select','select','التكرار','يوم في الأسبوع'),app.row('tv-row-action','action','تصدير الإعدادات','فتح'),app.row('tv-row-status','info','الحالة الحالية','التطبيق هو واجهة البدء الافتراضية.'),app.row('tv-row-time','time','بداية العرض اليومي','04:00'),app.row('tv-row-number','number','مدة وضع الصلاة (دقيقة)','15')];app.load();app.locale.set('en');assert.deepEqual(rows.map(row=>row.querySelector('.tv-row-value').textContent),['Yes','Weekday','Open','This app is the default Home app.','04:00','15']);});
