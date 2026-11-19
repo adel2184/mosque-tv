@@ -36,12 +36,14 @@
   function formatClock(ms, style) {
     if(activeProfile&&locationEngine)return locationEngine.formatClock(ms,activeProfile,style);
     const d = new Date(ms+OFFSET), hour = d.getUTCHours();
-    return {time:digits(pad(hour%12||12)+':'+pad(d.getUTCMinutes())+':'+pad(d.getUTCSeconds()),style),period:hour<12?'ص':'م'};
+    const full=currentSettings?.displayPreferences?.hourFormat===24;
+    return {time:digits(pad(full?hour:hour%12||12)+':'+pad(d.getUTCMinutes())+':'+pad(d.getUTCSeconds()),style),period:full?'':hour<12?'ص':'م'};
   }
   function formatTime(ms, style) {
     if(activeProfile&&locationEngine)return locationEngine.formatTime(ms,activeProfile,style);
     const d = new Date(ms+OFFSET), h = d.getUTCHours();
-    return digits(pad(h%12||12)+':'+pad(d.getUTCMinutes()),style)+' '+(h<12?'ص':'م');
+    const full=currentSettings?.displayPreferences?.hourFormat===24;
+    return digits(pad(full?h:h%12||12)+':'+pad(d.getUTCMinutes()),style)+(full?'':' '+(h<12?'ص':'م'));
   }
   function hijriFallback(key) {
     if (!validDate(key) || key < calendar.rangeStart || key > calendar.rangeEnd) return null;
@@ -107,6 +109,9 @@
     if(!donation||typeof donation!=='object'||Array.isArray(donation))fail('بيانات بطاقة التبرع غير صالحة.');
     out.donation={visible:bool(donation.visible,'بطاقة التبرع'),title:textValue(donation.title,90,'عنوان مشروع التبرع'),description:textValue(donation.description,180,'وصف المشروع')};
     if(out.donation.visible&&!out.donation.title.trim())fail('أدخل عنوان مشروع التبرع قبل إظهار البطاقة.');
+    if(c.announcements!==undefined)out.announcements=window.MosquePhoneSchema.validateAnnouncements(c.announcements);
+    if(c.manualOverrides!==undefined)out.manualOverrides=window.MosquePhoneSchema.validateOverrides(c.manualOverrides);
+    if(c.displayPreferences!==undefined)out.displayPreferences=window.MosquePhoneSchema.validatePreferences(c.displayPreferences);
     return out;
   }
   function validateTimetable(db, {savedInstallation=false}={}) {
@@ -159,27 +164,42 @@
     if(db.records.length!==count)fail('عدد سجلات المواقيت لا يطابق التغطية.');
     return {metadata:clone(m),records:Array.from(index.values()).sort((a,b)=>a.date.localeCompare(b.date)),index};
   }
-  function buildEvents(db,c) {
-    const events=[];
-    for(const r of db.records){
+  function eventBuilder(db,c) {
+    const manual=new Map(),fixedTimes=new Map();
+    for(const o of c.manualOverrides||[])manual.set(o.date+'/'+o.prayer,o.time);
+    for(const o of c.iqama.overrides)fixedTimes.set(o.kind+'/'+o.match+'/'+o.prayer,o);
+    const eventAt=(row,key)=>{
+      const id=manual.size?row.date+'/'+key:'';
+      let supplied=manual.size?manual.get(id):undefined;
+      if(typeof supplied==='string'){
+        const day=row.instants?dateKey(row.instants[key],db.metadata.timezone):row.date;
+        supplied=timestamp(day,supplied,db.metadata.timezone);manual.set(id,supplied);
+      }
+      return supplied??((row.instants?.[key]??timestamp(row.date,row[key],db.metadata.timezone))+(c.adhanAdjustments?.[key]||0)*60000);
+    };
+    const nextKey={fajr:'dhuhr',dhuhr:'asr',asr:'maghrib',maghrib:'isha'};
+    return function appendDay(events,r){
       const following=db.index.get(addDays(r.date,1));
+      if(manual.size&&eventAt(r,'dhuhr')<=eventAt(r,'sunrise'))fail('موعد الظهر اليدوي يجب أن يلي الشروق.');
+      const dayOfWeek=fixedTimes.size?weekday(r.date):0;
       for(const p of PRAYERS){
         // The last guard day is needed only for its Fajr boundary; no invented following date.
         if(!following&&p!=='fajr')continue;
-        const eventAt=(row,key)=>(row.instants?.[key]??timestamp(row.date,row[key],db.metadata.timezone))+(c.adhanAdjustments?.[key]||0)*60000;
         const adhan=eventAt(r,p);
-        const candidates=c.iqama.overrides.filter(o=>o.prayer===p&&((o.kind==='date'&&o.match===r.date)||(o.kind==='weekday'&&Number(o.match)===weekday(r.date))));
-        const fixed=candidates.find(o=>o.kind==='date')||candidates[0];
+        const fixed=fixedTimes.size&&(fixedTimes.get('date/'+r.date+'/'+p)||fixedTimes.get('weekday/'+dayOfWeek+'/'+p));
         let iqama=fixed?timestamp(r.date,fixed.time,db.metadata.timezone):adhan+c.iqama.offsets[p]*60000;
         if(fixed&&p==='isha'&&iqama<adhan)iqama=timestamp(addDays(r.date,1),fixed.time,db.metadata.timezone);
-        const nextKey={fajr:'dhuhr',dhuhr:'asr',asr:'maghrib',maghrib:'isha'}[p];
-        const nextAdhan=p==='isha'?eventAt(following,'fajr'):eventAt(r,nextKey);
+        const nextAdhan=p==='isha'?eventAt(following,'fajr'):eventAt(r,nextKey[p]);
         const deadline=p==='fajr'?eventAt(r,'sunrise'):nextAdhan;
         const end=iqama+c.prayerModeMinutes*60000;
         if(iqama<adhan||iqama>=deadline||end>nextAdhan)fail('إعداد إقامة '+NAMES[p]+' في '+r.date+' خارج فترة الصلاة أو يتداخل مع الصلاة التالية. راجع الفاصل والموعد الثابت ومدة وضع الصلاة.');
         events.push({id:r.date+'/'+p,date:r.date,prayer:p,adhan,iqama,end,deadline});
       }
-    }
+    };
+  }
+  function buildEvents(db,c) {
+    const events=[],appendDay=eventBuilder(db,c);
+    for(const row of db.records)appendDay(events,row);
     return events.sort((a,b)=>a.adhan-b.adhan);
   }
   function resolveState(ms,events,db,suppressedId,key=dateKey(ms)) {
@@ -216,6 +236,7 @@
   let storageNote='', savedSettings=clone(defaults), currentSettings, draft=null, database=null, events=[], databaseError='', nowProvider=()=>Date.now();
   let suppressedId=null, state=null, lastDate='', lastRenderSignature='', lastPhase='', settingsOpen=false, previewApplied=false;
   const STORE='mosque-display.settings.v1', TABLE_STORE='mosque-display.timetable.v1';
+  let settingsRevision=Math.max(1,Date.now());
   const acceptanceFixture=!window.MosqueAndroid && location.hash==='#acceptance' && new URLSearchParams(location.search).get('test')==='1';
   let storage,legacySettingsPresent=acceptanceFixture,nativeInstall={};try{if(!acceptanceFixture)storage=window.localStorage;}catch(_){storageNote='التخزين المحلي غير متاح؛ صدّر الإعدادات للاحتفاظ بها بعد إغلاق الصفحة.';}
   try{if(typeof window.MosqueAndroid?.setupStatus==='function')nativeInstall=JSON.parse(String(window.MosqueAndroid.setupStatus()));else if(window.MosqueAndroid)nativeInstall={legacyUpgrade:true};}catch(_){nativeInstall={legacyUpgrade:true};}
@@ -229,7 +250,7 @@
   if(setupPending){database=null;savedSettings=clone(defaults);savedSettings.donation.visible=false;savedSettings.mosque.enabled=false;}
   try{currentSettings=validateSettings(savedSettings);if(database)events=buildEvents(database,currentSettings);}catch(error){savedSettings=clone(defaults);currentSettings=clone(defaults);storageNote+=' تعارضت إعدادات الإقامة مع الجدول؛ استُخدمت الأمثلة الأصلية.';try{if(database)events=buildEvents(database,currentSettings);}catch(e){databaseError=e.message;database=null;}}
   function el(tag,className,text){const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=text;return node;}
-  function renderMosque(){
+  function renderMosque(measure=true){
     const host=$('mosqueInfo');host.replaceChildren();host.hidden=!currentSettings.mosque.enabled;
     $('stage').classList.toggle('info-hidden',!currentSettings.mosque.enabled);
     $('stage').classList.toggle('empty-info',!currentSettings.mosque.enabled);
@@ -242,18 +263,25 @@
     if(extras.childElementCount)host.append(extras);
     host.classList.toggle('compact-info',host.textContent.length>200);
     host.classList.toggle('dense-info',host.textContent.length>650);
-    fitInformation();
+    resetInformationSize(host);
+    if(measure)fitInformation(false);
   }
   const rows=new Map();
   KEYS.forEach(k=>{const row=el('tr');row.dataset.prayer=k;const name=el('th',null,NAMES[k]);name.scope='row';const adhan=el('td','time-cell','—'),iqama=el('td','time-cell','—');adhan.dir='ltr';iqama.dir='ltr';row.append(name,adhan,iqama);$('prayerRows').append(row);rows.set(k,{row,adhan,iqama});});
   function renderPrayerTable(ms){
     const key=dateKey(ms), r=database?.index.get(key), supported=database?.metadata.displayYears.includes(Number(key.slice(0,4)));
-    KEYS.forEach(k=>{const ui=rows.get(k);ui.row.querySelector('th').textContent=scheduledPrayerName(k,key);ui.adhan.textContent=supported&&r?formatTime((r.instants?.[k]??timestamp(key,r[k]))+(currentSettings.adhanAdjustments?.[k]||0)*60000,currentSettings.digitStyle):'—';const event=events.find(e=>e.date===key&&e.prayer===k);ui.iqama.textContent=supported&&event&&k!=='sunrise'?formatTime(event.iqama,currentSettings.digitStyle):'—';ui.row.classList.toggle('informational',k==='sunrise');});
+    KEYS.forEach(k=>{const ui=rows.get(k);ui.row.querySelector('th').textContent=scheduledPrayerName(k,key);const event=events.find(e=>e.date===key&&e.prayer===k);ui.adhan.textContent=supported&&r?formatTime(event?.adhan??((r.instants?.[k]??timestamp(key,r[k]))+(currentSettings.adhanAdjustments?.[k]||0)*60000),currentSettings.digitStyle):'—';ui.iqama.textContent=supported&&event&&k!=='sunrise'?formatTime(event.iqama,currentSettings.digitStyle):'—';ui.row.classList.toggle('informational',k==='sunrise');});
     const unavailable=!database||!supported||!r;
     $('displayStatus').hidden=!unavailable;
     $('dataStatus').textContent=unavailable?tr('بيانات المواقيت غير متوفرة لهذا التاريخ — حدّث الجدول من الإعدادات','Prayer times unavailable for this date — update the timetable in settings'):'';
   }
+  function renderDateVisibility(){
+    const dateStyle=activeProfile?.dateStyle??currentSettings.displayPreferences?.dateStyle??'both';
+    $('hijriDate').hidden=dateStyle==='gregorian'||dateStyle==='none';$('gregorianDate').hidden=dateStyle==='hijri'||dateStyle==='none';
+    document.querySelectorAll('.dates .date-divider').forEach((node,index)=>node.hidden=dateStyle==='none'||(index===1&&dateStyle!=='both'));
+  }
   function renderDates(ms){
+    renderDateVisibility();
     if(activeProfile&&locationEngine){
       const key=dateKey(ms),parts=locationEngine.wallParts(ms,ZONE),h=hijri(key),en=english();
       $('weekday').textContent=new Intl.DateTimeFormat(en?'en-US':'ar-SA',{timeZone:ZONE,weekday:'long',calendar:'gregory'}).format(new Date(ms));
@@ -261,8 +289,6 @@
       $('gregorianDate').dir=en?'ltr':'rtl';$('hijriDate').dir=en?'ltr':'rtl';$('weekday').dir=en?'ltr':'rtl';
       const names=en?['Muharram','Safar','Rabi I','Rabi II','Jumada I','Jumada II','Rajab','Shaban','Ramadan','Shawwal','Dhul Qadah','Dhul Hijjah']:HIJRI_MONTHS;
       $('hijriDate').textContent=h?digits(h.day+' '+names[h.month-1]+' '+h.year+(en?' AH':' هـ'),currentSettings.digitStyle):tr('التقويم الهجري خارج نطاق التغطية','Hijri calendar coverage needs updating');
-      $('hijriDate').hidden=activeProfile.dateStyle==='gregorian';$('gregorianDate').hidden=activeProfile.dateStyle==='hijri';
-      document.querySelectorAll('.dates .date-divider').forEach((node,index)=>node.hidden=index===1&&activeProfile.dateStyle!=='both');
       const country=setupCatalog.countries.find(c=>c.id===activeProfile.countryId),city=country?.cities.find(c=>c.id===activeProfile.cityId),line=document.querySelector('.city-line');
       if(line)line.textContent=(en?city?.nameEn:city?.nameAr||city?.nameEn)+' · '+ZONE;
       return;
@@ -336,14 +362,14 @@
   function formatDuration(seconds){
     return digits(pad(Math.floor(seconds/3600))+':'+pad(Math.floor(seconds/60)%60)+':'+pad(seconds%60),currentSettings.digitStyle);
   }
-  function syncGuide(ms){
+  function syncGuide(ms,measure=true){
     const {cue,phone,friday,ramadan,ramadanAt,postStart}=guideState;
     const lang=english()?'en':'ar',languageChanged=lang!==shownLanguage;
     const cueChanged=cue!==shownCue,fridayChanged=friday!==shownFriday;
     if(cueChanged||fridayChanged||languageChanged){
       const visit=cue==='entrance'||cue==='exit', fridayCard=friday!=='none'&&cue!=='rows';
       const contextual=visit||fridayCard;
-      const ticker=$('mosqueTicker'),scrolling=!contextual&&cue!=='rows'&&cue!=='adhkar';
+      const ticker=$('mosqueTicker'),scrolling=!contextual&&cue!=='rows'&&cue!=='adhkar'&&(currentSettings.announcements??displayContent.ticker).length>0;
       ticker.hidden=!contextual&&!scrolling;
       ticker.classList.toggle('contextual',contextual);
       ticker.classList.toggle('ticker-paused',!scrolling);
@@ -364,7 +390,7 @@
       }
       $('rowsKhutbah').hidden=!(cue==='rows'&&friday==='listen');
       if(cue==='rows'&&friday==='listen')$('rowsKhutbah').textContent=guide.khutbah;
-      if(scrolling)sizeTicker();
+      if(scrolling&&measure)sizeTicker();
     }
     if(cueChanged||phone!==shownPhone||languageChanged){
       $('phoneReminder').hidden=!(phone&&cue==='entrance');
@@ -427,31 +453,71 @@
     const width=Math.floor(slideElapsed/1000)/currentSettings.slideSeconds*100+'%';
     if($('slideProgress').style.width!==width)$('slideProgress').style.width=width;
   }
+  let staticTicker=null,renderedAnnouncements=null;
   function sizeTicker(){
+    if(staticTicker)return;
     const track=$('tickerTrack'),cycle=track.children[0];if(!cycle||$('tickerViewport').hidden)return;
     const width=cycle.scrollWidth;
     if(width<=0)return; // Hidden prayer-mode content has no measurable width.
     track.style.setProperty('--ticker-distance',width+'px');
     track.style.setProperty('--ticker-duration',Math.max(60,width/42)+'s');
   }
-  function renderTicker(){
+  function staticPages(items) {
+    const pages=[];
+    for(const {label,text} of items){
+      // Keep a page below three TV-width lines even for unbroken wide glyphs.
+      const points=Array.from(text),limit=140-Array.from(label).length;
+      let start=0;
+      while(start<points.length){
+        let end=Math.min(start+limit,points.length);
+        if(end<points.length){
+          let space=end;
+          while(space>start&&!/\s/u.test(points[space-1]))space--;
+          if(space>start)end=space;
+          else while(end<points.length&&/[\u064b-\u065f\u0670\ufe0f]/u.test(points[end]))end++;
+        }
+        pages.push({label,text:points.slice(start,end).join('')});start=end;
+      }
+    }
+    return pages;
+  }
+  function showStaticTicker(ms){
+    const t=staticTicker;
+    if(!t||!t.items.length||$('tickerViewport').hidden)return;
+    const index=Math.floor(Math.max(0,ms-t.start)/15000)%t.items.length;
+    if(index===t.index)return;
+    if(t.index>=0)t.items[t.index].hidden=true;
+    t.items[index].hidden=false;t.index=index;
+  }
+  function renderTicker(measure=true){
     const track=$('tickerTrack');track.replaceChildren();
-    for(let copy=0;copy<2;copy++){
+    const announcements=currentSettings.announcements??displayContent.ticker;
+    renderedAnnouncements=announcements;
+    const custom=currentSettings.announcements&&
+      (announcements.length!==displayContent.ticker.length||announcements.some((a,i)=>a.text!==displayContent.ticker[i].text||a.label!==displayContent.ticker[i].label));
+    staticTicker=motionPreference?.matches&&custom?{items:[],index:-1,start:nowProvider()}:null;
+    track.classList.toggle('static-announcements',Boolean(staticTicker));
+    const items=staticTicker?staticPages(announcements):announcements;
+    for(let copy=0;copy<(staticTicker?1:2);copy++){
       const cycle=el('div','ticker-cycle');if(copy)cycle.setAttribute('aria-hidden','true');
-      displayContent.ticker.forEach(item=>{const node=el('span','ticker-item');node.append(el('strong','ticker-label',item.label+' :'),el('span','ticker-text',item.text));cycle.append(node);});
+      items.forEach(item=>{const node=el('span','ticker-item');if(item.label)node.append(el('strong','ticker-label',item.label+' :'));node.append(el('span','ticker-text',item.text));if(staticTicker){node.hidden=true;staticTicker.items.push(node);}cycle.append(node);});
       track.append(cycle);
     }
-    sizeTicker();
+    if(staticTicker)showStaticTicker(nowProvider());
+    if(measure)sizeTicker();
   }
-  function tick(){
+  function refreshGuideDay(key){
+    const todayHijri=hijriFallback(key);
+    const nextMonth=todayHijri?.month===9&&todayHijri.day>=29?hijriFallback(addDays(key,1))?.month:todayHijri?.month;
+    guideDay=window.MosquePrayerContext.prepareDay(events,key,todayHijri,nextMonth);
+  }
+  function tick(measure=true){
     const ms=nowProvider(), key=dateKey(ms), clock=formatClock(ms,currentSettings.digitStyle);
     if($('clockTime').textContent!==clock.time)$('clockTime').textContent=clock.time;if($('clockPeriod').textContent!==clock.period)$('clockPeriod').textContent=clock.period;
     state=resolveState(ms,events,database,suppressedId,key);
     if(key!==lastDate){
       lastDate=key;renderDates(ms);renderPrayerTable(ms);
-      const todayHijri=hijriFallback(key);
-      const nextMonth=todayHijri?.month===9&&todayHijri.day>=29?hijriFallback(addDays(key,1))?.month:todayHijri?.month;
-      guideDay=window.MosquePrayerContext.prepareDay(events,key,todayHijri,nextMonth);
+      refreshGuideDay(key);
     }
     window.MosquePrayerContext.resolve(ms,state,guideDay,currentSettings,guideState);
     const signature=key+'/'+state.phase+'/'+state.highlight+'/'+(state.next?.date||'')+'/'+currentSettings.digitStyle;
@@ -469,13 +535,18 @@
     const inPrayer=state.phase==='PRAYER_MODE';
     if(inPrayer&&lastPhase!=='PRAYER_MODE'){if(settingsOpen){closeSettings(true);return;}$('prayerOverlay').hidden=false;$('prayerOverlay').setAttribute('aria-hidden','false');document.body.classList.add('praying');}
     if(!inPrayer&&lastPhase==='PRAYER_MODE'){$('prayerOverlay').hidden=true;$('prayerOverlay').setAttribute('aria-hidden','true');document.body.classList.remove('praying');}
-    lastPhase=state.phase;syncGuide(ms);syncContentMode();updateSlideshow(ms,contentMode!=='slides');
+    lastPhase=state.phase;syncGuide(ms,measure);syncContentMode();updateSlideshow(ms,contentMode!=='slides');
+    if(staticTicker)showStaticTicker(ms);
     if(!settingsOpen&&ms-lastInteraction>5000&&!document.body.classList.contains('idle'))document.body.classList.add('idle');
   }
-  function fitInformation(){
-    const info=$('mosqueInfo');if(info.hidden)return;
-    // Fit long editable content inside the bounded TV header, never ellipsize it.
+  function resetInformationSize(info){
     info.style.height='188px';info.style.fontSize='23px';const name=info.querySelector('h1');if(name)name.style.fontSize='43px';
+  }
+  function fitInformation(reset=true){
+    const info=$('mosqueInfo');if(info.hidden)return;
+    if(reset)resetInformationSize(info);
+    // Fit long editable content inside the bounded TV header, never ellipsize it.
+    const name=info.querySelector('h1');
     let scale=1;
     for(let i=0;i<24&&info.scrollHeight>info.clientHeight;i++){
       scale*=Math.min(.96,Math.max(.35,(info.clientHeight-4)/info.scrollHeight));
@@ -484,7 +555,9 @@
   }
   function refresh(){lastDate='';lastRenderSignature='';contentMode='';shownLanguage=null;if(window.MosqueLocale)window.MosqueLocale.set(activeProfile?.language||'ar');renderMosque();tick();}
   function applySettings(validated,preparedEvents){
+    const tickerChanged=JSON.stringify(renderedAnnouncements)!==JSON.stringify(validated.announcements??displayContent.ticker);
     currentSettings=validated;events=preparedEvents;
+    if(tickerChanged)renderTicker();
     if(settingsOpen)previewApplied=true;
     refresh();
   }
@@ -499,12 +572,13 @@
     if(setupPending&&!installation){for(const k of Object.keys(candidate.mosque.fields)){candidate.mosque.fields[k].value='';candidate.mosque.fields[k].visible=false;}candidate.mosque.custom=[];candidate.donation.visible=false;candidate.iqama={offsets:{fajr:10,dhuhr:10,asr:10,maghrib:5,isha:10},confirmed:false,overrides:[]};candidate.prayerModeMinutes=10;}
     const country=setupCatalog.countries.find(c=>c.id===profile.countryId),city=country.cities.find(c=>c.id===profile.cityId);
     candidate.mosque.enabled=true;candidate.mosque.fields.name={value:profile.mosqueName,visible:true};candidate.mosque.fields.address={value:[profile.neighborhood,profile.language==='en'?city.nameEn:city.nameAr||city.nameEn].filter(Boolean).join('، '),visible:true};candidate.location={latitude:profile.latitude,longitude:profile.longitude};
+    if(candidate.displayPreferences)candidate.displayPreferences={hourFormat:profile.hourFormat,dateStyle:profile.dateStyle,neighborhood:profile.neighborhood};
     return validateSettings(candidate);
   }
   function validateSetup(profile,table){return withProfile(profile,p=>{const data=validateTimetable(table),settings=setupSettings(p),nextEvents=buildEvents(data,settings);return {profile:clone(p),settings,data,events:nextEvents};});}
   function persistCurrent(settings,table){
     if(!storage)return {ok:false};
-    if(installation){try{const profile=clone(activeProfile);if(settings.mosque.fields.name.value.trim())profile.mosqueName=settings.mosque.fields.name.value;const snapshot={...installation,profile,settings:clone(settings),timetable:plainTimetable(table)};profileStore.commit(storage,snapshot);installation=snapshot;activeProfile=profile;safeWrite(storage,STORE,JSON.stringify(settings));safeWrite(storage,TABLE_STORE,JSON.stringify(snapshot.timetable));return {ok:true};}catch(error){return {ok:false,error:String(error.message||error)};}}
+    if(installation){try{let profile={...activeProfile,...settings.displayPreferences};if(settings.mosque.fields.name.value.trim())profile.mosqueName=settings.mosque.fields.name.value;profile=locationEngine.validateProfile(profile,setupCatalog);const snapshot={...installation,profile,settings:clone(settings),timetable:plainTimetable(table)};profileStore.commit(storage,snapshot);installation=snapshot;activeProfile=profile;safeWrite(storage,STORE,JSON.stringify(settings));safeWrite(storage,TABLE_STORE,JSON.stringify(snapshot.timetable));return {ok:true};}catch(error){return {ok:false,error:String(error.message||error)};}}
     return safeWrite(storage,STORE,JSON.stringify(settings));
   }
   if(locationEngine&&profileStore)window.MosqueInstall={
@@ -515,11 +589,160 @@
       if(!storage)throw Error('Local storage is unavailable. Setup was not saved.');
       const checked=validateSetup(profile,table),snapshot={schemaVersion:1,profile:checked.profile,settings:checked.settings,timetable:plainTimetable(checked.data),completedAt:new Date(nowProvider()).toISOString()};
       profileStore.commit(storage,snapshot);
-      activeProfile=checked.profile;ZONE=activeProfile.timezone;calendar=setupCalendar;installation=snapshot;installationError='';setupPending=false;savedSettings=clone(checked.settings);currentSettings=clone(checked.settings);database=checked.data;events=checked.events;databaseError='';storageNote='';suppressedId=null;
+      settingsRevision++;activeProfile=checked.profile;ZONE=activeProfile.timezone;calendar=setupCalendar;installation=snapshot;installationError='';setupPending=false;savedSettings=clone(checked.settings);currentSettings=clone(checked.settings);database=checked.data;events=checked.events;databaseError='';storageNote='';suppressedId=null;
       safeWrite(storage,STORE,JSON.stringify(savedSettings));safeWrite(storage,TABLE_STORE,JSON.stringify(snapshot.timetable));
       try{window.MosqueAndroid?.markSetupCompleted?.(activeProfile.language);window.MosqueAndroid?.setProfileTimezone?.(activeProfile.timezone);}catch(_){}refresh();return {ok:true};
     }
   };
+  function phonePreferences(settings) {
+    const legacyAddress=settings.mosque.fields.address.value;
+    const p=activeProfile||settings.displayPreferences;
+    return {hourFormat:p?.hourFormat??12,dateStyle:p?.dateStyle??'both',
+      neighborhood:p?.neighborhood??(legacyAddress.length<=180?legacyAddress:'')};
+  }
+  function phoneState() {
+    if(setupPending||!database||installationError)return {ok:false,error:'unavailable'};
+    const backup=validateSettings(savedSettings);
+    backup.displayPreferences=phonePreferences(backup);
+    const settings=window.MosquePhoneSchema.project(backup,backup.displayPreferences,displayContent.ticker);
+    if(!settings.mosqueName&&activeProfile)settings.mosqueName=activeProfile.mosqueName;
+    backup.announcements=settings.announcements;
+    backup.manualOverrides=settings.manualOverrides;
+    return {ok:true,revision:settingsRevision,settings,backup};
+  }
+  function phoneGuard(revision,live) {
+    if(!live())throw Error('unavailable');
+    if(revision!==settingsRevision)throw Error('conflict');
+    if(!database||setupPending||installationError)throw Error('unavailable');
+    if(state?.phase==='PRAYER_MODE'||window.MosqueSetup?.isOpen()||
+      (settingsOpen&&(tvEditor||previewApplied||JSON.stringify(draft)!==JSON.stringify(savedSettings))))throw Error('busy');
+  }
+  function scheduleChanged(previous,candidate) {
+    return previous.prayerModeMinutes!==candidate.prayerModeMinutes||
+      JSON.stringify(previous.iqama.offsets)!==JSON.stringify(candidate.iqama.offsets)||
+      JSON.stringify(previous.iqama.overrides)!==JSON.stringify(candidate.iqama.overrides)||
+      JSON.stringify(previous.adhanAdjustments)!==JSON.stringify(candidate.adhanAdjustments)||
+      JSON.stringify(previous.manualOverrides||[])!==JSON.stringify(candidate.manualOverrides||[]);
+  }
+  function phoneCandidate(request,previous) {
+    const schema=window.MosquePhoneSchema;
+    const edit=schema.validateEditor(request.settings);
+    if(!edit.mosqueName.trim()&&(previous.settings.mosqueName||edit.mosqueName))throw Error('invalid');
+    if(request.backup!==undefined)schema.validateBackup(request.backup);
+    const candidate=validateSettings(request.backup===undefined?savedSettings:request.backup);
+    if(edit.mosqueName!==previous.settings.mosqueName||request.backup!==undefined)candidate.mosque.fields.name.value=edit.mosqueName;
+    const originalNeighborhood=request.backup?.displayPreferences?.neighborhood??previous.settings.neighborhood;
+    if(edit.neighborhood!==originalNeighborhood){
+      let address=edit.neighborhood;
+      if(activeProfile){
+        const country=setupCatalog.countries.find(c=>c.id===activeProfile.countryId);
+        const city=country.cities.find(c=>c.id===activeProfile.cityId);
+        address=[address,activeProfile.language==='en'?city.nameEn:city.nameAr||city.nameEn].filter(Boolean).join('، ');
+      }
+      candidate.mosque.fields.address.value=address;
+    }
+    candidate.displayPreferences={hourFormat:edit.hourFormat,dateStyle:edit.dateStyle,neighborhood:edit.neighborhood};
+    candidate.announcements=edit.announcements;
+    candidate.manualOverrides=edit.manualOverrides;
+    candidate.iqama.offsets=edit.iqamaOffsets;
+    schema.updateFriday(candidate.iqama,edit.jumuahTime);
+    candidate.prayerModeMinutes=edit.prayerModeMinutes;
+    candidate.silentPhoneReminder=edit.silentPhoneReminder;
+    candidate.postPrayerMinutes=edit.postPrayerMinutes;
+    return validateSettings(candidate);
+  }
+  let phoneApplying=false;
+  async function applyPhoneSettings(request,live) {
+    // Only a live approved native request reaches this method. Every asynchronous
+    // slice rechecks the session, the revision and any local operator edit.
+    if(phoneApplying)return {ok:false,error:'busy'};
+    phoneApplying=true;
+    let failure='invalid',committed=false;
+    try {
+      if(typeof live!=='function')return {ok:false,error:'unavailable'};
+      window.MosquePhoneSchema.object(request,['revision','settings'],['backup']);
+      if(!Number.isSafeInteger(request.revision)||request.revision<=0)throw Error('invalid');
+      const guard=()=>phoneGuard(request.revision,live);
+      guard();
+      if(!storage)return {ok:false,error:'storage'};
+      const previous=phoneState(),candidate=phoneCandidate(request,previous);
+      if(request.backup===undefined&&JSON.stringify(previous.settings)===JSON.stringify(request.settings))return previous;
+      const nextProfile=activeProfile&&locationEngine.validateProfile({...activeProfile,...candidate.displayPreferences,
+        mosqueName:candidate.mosque.fields.name.value||activeProfile.mosqueName},setupCatalog);
+      let deadline=performance.now()+3;
+      function checkpoint(){
+        if(performance.now()<deadline)return null;
+        return new Promise(resolve=>setTimeout(resolve,0)).then(()=>{guard();deadline=performance.now()+3;});
+      }
+      let nextEvents=events;
+      if(scheduleChanged(currentSettings,candidate)){
+        failure='schedule';
+        const appendDay=eventBuilder(database,candidate);
+        nextEvents=[];
+        for(const row of database.records){
+          appendDay(nextEvents,row);
+          const pause=checkpoint();if(pause)await pause;
+        }
+        nextEvents.sort((a,b)=>a.adhan-b.adhan);
+      }
+      failure='storage';
+      const snapshot=installation&&{...installation,profile:nextProfile,settings:candidate};
+      if(snapshot){
+        const commit=await profileStore.prepareSettingsCommit(snapshot,checkpoint);
+        guard();commit(storage);
+      }else{
+        guard();storage.setItem(STORE,JSON.stringify(candidate));
+      }
+      const old=currentSettings;
+      if(snapshot){installation=snapshot;activeProfile=nextProfile;}
+      settingsRevision++;savedSettings=candidate;currentSettings=candidate;
+      committed=true;
+      const timesChanged=events!==nextEvents;
+      events=nextEvents;
+      // The final guard proved this already-open TV form was clean. Rebind it
+      // now, while still in the commit task; never replace a draft started later.
+      if(settingsOpen){
+        draft=clone(candidate);
+        if(!tvMode||tvPane==='rows')drawSettings();
+      }
+      const appliedRevision=settingsRevision;
+      const nextTask=()=>new Promise(resolve=>setTimeout(resolve,0));
+      if(timesChanged&&lastDate)refreshGuideDay(lastDate);
+      // Commit, then let the renderer handle any input before painting changes.
+      // No older continuation can paint over another operator's subsequent save.
+      await nextTask();
+      if(appliedRevision!==settingsRevision||currentSettings!==candidate)return phoneState();
+      const identityChanged=JSON.stringify(old.mosque)!==JSON.stringify(candidate.mosque);
+      const tickerChanged=JSON.stringify(previous.settings.announcements)!==JSON.stringify(candidate.announcements);
+      if(identityChanged)renderMosque(false);
+      if(JSON.stringify(old.donation)!==JSON.stringify(candidate.donation))renderDonation();
+      if(tickerChanged){renderTicker(false);if(!previous.settings.announcements.length||!candidate.announcements.length)shownCue=null;}
+      const now=nowProvider(),day=dateKey(now);
+      if(old.digitStyle!==candidate.digitStyle)lastDate='';
+      if(lastDate===day){
+        if(timesChanged||previous.settings.hourFormat!==candidate.displayPreferences.hourFormat)renderPrayerTable(now);
+        if(previous.settings.dateStyle!==candidate.displayPreferences.dateStyle)renderDateVisibility();
+      }
+      tick(false);
+      // Finish all DOM writes before the single layout measurement. Splitting the
+      // task also lets the WebView paint / process remote input after committing.
+      if(identityChanged||tickerChanged){
+        await nextTask();
+        if(appliedRevision===settingsRevision&&currentSettings===candidate){
+          if(identityChanged)fitInformation(false);
+          if(!motionPreference?.matches)sizeTicker();
+        }
+      }
+      return phoneState();
+    }catch(error){
+      // A paint interruption after setItem cannot turn a durable commit into
+      // a failed save. The running scheduler keeps rendering the current data.
+      if(committed)return phoneState();
+      const code=error?.message;
+      return {ok:false,error:['invalid','busy','conflict','unavailable'].includes(code)?code:failure};
+    }finally{phoneApplying=false;}
+  }
+  window.MosquePhoneSettings={state:phoneState,apply:applyPhoneSettings};
   let lastInteraction=Date.now();
   function interaction(){if(state?.phase==='PRAYER_MODE')return;lastInteraction=nowProvider();if(document.body.classList.contains('idle'))document.body.classList.remove('idle');}
   function resize(){const scale=Math.min(innerWidth/1920,innerHeight/1080);$('stage').style.transform='scale('+scale+')';$('stage').style.left=((innerWidth-1920*scale)/2)+'px';$('stage').style.top=((innerHeight-1080*scale)/2)+'px';fitInformation();fitSlideText();fitDonationText();sizeTicker();}
@@ -790,7 +1013,7 @@
     // Commit the validated draft before rendering: saving may itself enter prayer mode.
     const candidate=validateSettings(draft),nextEvents=database?buildEvents(database,candidate):[];
     const result=persistCurrent(candidate,database);if(!result.ok)throw Error(tr('تعذر الحفظ محليًا؛ لم تُعتمد المسودة. صدّر نسخة احتياطية وحاول مجددًا.','Could not save locally. The draft remains unsaved; export a backup and try again.'));
-    savedSettings=clone(candidate);closeSettings(false);applySettings(candidate,nextEvents);
+    settingsRevision++;savedSettings=clone(candidate);closeSettings(false);applySettings(candidate,nextEvents);
   }catch(error){message(error.message,true);}});
   $('cancelButton').addEventListener('click',()=>closeSettings(true));
   $('settingsDialog').addEventListener('cancel',e=>{e.preventDefault();if(tvMode)tvHandleBack();else closeSettings(true);});
@@ -799,7 +1022,7 @@
   $('exportSettingsButton').addEventListener('click',()=>{try{download('mosque-settings.json',validateSettings(draft));message('صُدّرت المسودة الحالية. لم تتغير الإعدادات المحفوظة.');}catch(error){message(error.message,true);}});
   $('importSettingsButton').addEventListener('click',()=>$('settingsFile').click());
   $('settingsFile').addEventListener('change',e=>{readFile(e.target.files[0],value=>{const candidate=validateSettings(value);if(database)buildEvents(database,candidate);draft=candidate;drawSettings();message('استُوردت الإعدادات في المسودة. عاينها ثم احفظها.');});e.target.value='';});
-  $('timetableFile').addEventListener('change',e=>{readFile(e.target.files[0],value=>{const next=validateTimetable(value),nextEvents=buildEvents(next,currentSettings);buildEvents(next,savedSettings);let result;if(installation){result=persistCurrent(savedSettings,next);if(!result.ok)fail('Could not save the imported timetable; the previous table is retained.');}else result=storage?safeWrite(storage,TABLE_STORE,JSON.stringify(value)):{ok:false};database=next;events=nextEvents;if(!result.ok)storageNote='جدول المواقيت المستورد متاح لهذه الجلسة فقط؛ احتفظ بملفه وأعد استيراده بعد التشغيل.';refresh();if(settingsOpen){drawSettings();message('تم التحقق من الجدول واستيراده. '+(result.ok?'حُفظ محليًا.':'تعذر حفظه محليًا؛ احتفظ بالملف.'),!result.ok);}});e.target.value='';});
+  $('timetableFile').addEventListener('change',e=>{readFile(e.target.files[0],value=>{const next=validateTimetable(value),nextEvents=buildEvents(next,currentSettings);buildEvents(next,savedSettings);let result;if(installation){result=persistCurrent(savedSettings,next);if(!result.ok)fail('Could not save the imported timetable; the previous table is retained.');}else result=storage?safeWrite(storage,TABLE_STORE,JSON.stringify(value)):{ok:false};settingsRevision++;database=next;events=nextEvents;if(!result.ok)storageNote='جدول المواقيت المستورد متاح لهذه الجلسة فقط؛ احتفظ بملفه وأعد استيراده بعد التشغيل.';refresh();if(settingsOpen){drawSettings();message('تم التحقق من الجدول واستيراده. '+(result.ok?'حُفظ محليًا.':'تعذر حفظه محليًا؛ احتفظ بالملف.'),!result.ok);}});e.target.value='';});
   if($('importTimetableButton'))$('importTimetableButton').addEventListener('click',()=>$('timetableFile').click());
   if($('exportTimetableButton'))$('exportTimetableButton').addEventListener('click',exportTimetable);
   $('fullscreenButton').addEventListener('click',async()=>{const ok=await attemptFullscreen(document.documentElement);if(!ok){openSettings();message('تعذر ملء الشاشة. جرّب F11 على Windows أو اختصار ملء الشاشة الخاص بالمتصفح.',true);}});
@@ -814,8 +1037,9 @@
   if($('donationQR').complete&&$('donationQR').naturalWidth===0)donationImageAvailable=false;
   window.addEventListener('resize',resize);
   const motionPreference=typeof window.matchMedia==='function'?window.matchMedia('(prefers-reduced-motion: reduce)'):null;
-  if(motionPreference?.addEventListener)motionPreference.addEventListener('change',resize);
-  else if(motionPreference?.addListener)motionPreference.addListener(resize);
+  function motionChanged(){renderTicker(false);resize();}
+  if(motionPreference?.addEventListener)motionPreference.addEventListener('change',motionChanged);
+  else if(motionPreference?.addListener)motionPreference.addListener(motionChanged);
   function resume(){lastDate='';lastTick=0;slideElapsed=0;tick();}
   window.addEventListener('focus',resume);window.addEventListener('pageshow',resume);document.addEventListener('visibilitychange',resume);
   renderTicker();resize();refresh();
@@ -828,7 +1052,7 @@
       getSlidesState:()=>({index:slideIndex,elapsed:slideElapsed,failed:[...failedSlides],count:enabledSlides().length}),
       getContentMode:()=>contentMode,
       getDonationState:()=>({hidden:$('donationCard').hidden,visible:currentSettings.donation.visible,source:displayContent.donation.image,title:currentSettings.donation.title,description:currentSettings.donation.description,imageAvailable:donationImageAvailable}),
-      getTickerState:()=>({hidden:$('mosqueTicker').hidden,paused:$('mosqueTicker').classList.contains('ticker-paused'),texts:displayContent.ticker.map(item=>item.text)})};
+      getTickerState:()=>({hidden:$('mosqueTicker').hidden,paused:$('mosqueTicker').classList.contains('ticker-paused'),texts:(currentSettings.announcements??displayContent.ticker).map(item=>item.text)})};
     window.MosqueApp=api;
     if(acceptanceFixture && parent!==window){
       const runner=document.createElement('script');

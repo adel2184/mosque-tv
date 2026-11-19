@@ -10,5 +10,27 @@
   }
   function read(storage){const raw=storage.getItem(KEY);if(raw===null)return null;if(bytes(raw)>MAX_BYTES)throw Error('Installation snapshot is too large.');return validate(JSON.parse(raw));}
   function commit(storage,value){const candidate=validate(value),raw=JSON.stringify(candidate);if(bytes(raw)>MAX_BYTES)throw Error('Installation snapshot is too large.');storage.setItem(KEY,raw);return candidate;}
-  return {key:KEY,read,commit};
+  // A phone edit changes the profile/settings but keeps the validated timetable.
+  // Serialize its rows in bounded slices, then replace the same atomic key once.
+  async function prepareSettingsCommit(value, checkpoint) {
+    validate(value);
+    const {timetable,...installation}=value, {records,...tableInfo}=timetable;
+    if(!Array.isArray(records))throw Error('Invalid installation timetable.');
+    const prefix=JSON.stringify(installation).slice(0,-1)+',"timetable":{'+
+      Object.entries(tableInfo).map(([key,data])=>JSON.stringify(key)+':'+JSON.stringify(data)).join(',')+
+      (Object.keys(tableInfo).length?',':'')+'"records":[';
+    const parts=[prefix];
+    let used=bytes(prefix)+3; // trailing ]}}
+    if(used>MAX_BYTES)throw Error('Installation snapshot is too large.');
+    for(let i=0;i<records.length;i++) {
+      const row=(i?',':'')+JSON.stringify(records[i]);
+      parts.push(row);used+=bytes(row);
+      if(used>MAX_BYTES)throw Error('Installation snapshot is too large.');
+      if((i&7)===7){const pause=checkpoint();if(pause)await pause;}
+    }
+    parts.push(']}}');
+    const serialized=parts.join('');
+    return storage=>storage.setItem(KEY,serialized);
+  }
+  return {key:KEY,read,commit,prepareSettingsCommit};
 });

@@ -1,95 +1,464 @@
 <!doctype html>
 <html lang="ar" dir="rtl">
+<head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ريموت شاشة الجامع</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#142a24">
+<title>شاشة الجامع</title>
 <style>
-html{color-scheme:dark;font-family:system-ui}body{margin:0;padding:24px;background:#101c21;color:#eee9dc;text-align:center}main{max-width:440px;margin:auto}
-h1{font-size:24px}p{color:#b8c9bd;line-height:1.8}.remote{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;direction:ltr;margin:25px 0}
-button{border:1px solid #75866a;background:#213e32;color:#fff;border-radius:14px;min-height:64px;font-size:21px}button:active{background:#4b7654}button:focus-visible{outline:3px solid #e1c785}button:disabled{opacity:.5}
-textarea{box-sizing:border-box;width:100%;background:#172a2c;border:1px solid #64786b;color:white;border-radius:10px;padding:12px;font:inherit}#send{width:100%;margin-top:10px}small{color:#b4c4b9}#state{min-height:32px}#code{font-size:32px;letter-spacing:.15em}
+:root{color-scheme:dark;--page:#11221e;--card:#18332b;--line:#42594f;--ink:#f5f2e6;--muted:#c0cfc2;--active:#dce8be;--accent:#e8ca8c}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.55 system-ui,sans-serif;color:var(--ink);background:var(--page)}
+main{max-width:680px;margin:auto;padding:20px max(16px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+header,.row-tools,.backup-actions,.section-label{display:flex;align-items:center;justify-content:space-between;gap:10px}
+h1,h2,p{margin:0}h1{font-size:1.45rem}h2{font-size:1.08rem}button,input,select,textarea{font:inherit}
+button,.file-button{cursor:pointer;border:1px solid var(--line);color:var(--ink);background:#223f35;border-radius:10px;min-height:44px;padding:7px 13px;touch-action:manipulation}
+button:active,.file-button:active{background:#385a49}button:disabled,fieldset:disabled{opacity:.55}button:disabled{cursor:default}
+:focus-visible,.file-button:focus-within{outline:3px solid var(--accent);outline-offset:2px}
+[hidden]{display:none!important}.muted,small{color:var(--muted)}small{font-size:.82rem}
+#language{font-size:.9rem;min-width:80px}#state{margin:8px 0 13px;color:var(--muted)}#code{display:block;font-size:2rem;letter-spacing:.15em;text-align:center;color:var(--accent)}
+nav{margin:15px 0;padding:4px;border-radius:14px;display:flex;background:#0b1b16;border:1px solid var(--line);gap:4px}
+[role=tab]{flex:1;border:0;background:transparent;color:var(--muted);font-weight:600}
+[role=tab][aria-selected=true]{background:var(--active);color:#122b1d}
+#remote-panel{max-width:460px;margin:0 auto}.card,details{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:15px;margin:12px 0}
+.remote{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;direction:ltr;margin-bottom:15px}
+.remote button{font-size:1.05rem;min-height:52px}.remote [data-key=ok]{background:#395c47;font-weight:700}
+input:not([type=checkbox]),select,textarea{display:block;width:100%;min-width:0;background:#112720;color:var(--ink);border:1px solid #637b6d;border-radius:8px;padding:9px 10px;min-height:44px}
+input[type=time],input[type=date],input[type=number]{direction:ltr;text-align:start}textarea{resize:vertical;min-height:70px}
+label.field{display:grid;gap:4px;margin:9px 0;font-size:.92rem}.check{display:flex;gap:10px;align-items:center;margin:12px 0;min-height:40px}.check input{width:21px;height:21px;accent-color:var(--active)}
+#send{margin-top:8px;width:100%}.pair-note{margin:12px 0}
+summary{font-size:1.03rem;font-weight:650;cursor:pointer;min-height:34px}details[open]>summary{margin-bottom:9px;border-bottom:1px solid var(--line);padding-bottom:8px}
+.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px}
+.field-wide{grid-column:1/-1}fieldset{padding:0;border:0;min-inline-size:0;margin:0}.entry{padding:10px 0;border-bottom:1px solid var(--line)}.entry:first-child{padding-top:0}.row-tools{justify-content:flex-end;flex-wrap:wrap}.row-tools button{font-size:.86rem}
+.add{margin-top:10px}.backup-actions{display:flex;justify-content:flex-start;flex-wrap:wrap}.file-button{position:relative;display:inline-flex;align-items:center;overflow:hidden}.file-button input{position:absolute;inset:0;width:100%;height:100%;opacity:0}
+.status{font-size:.9rem;line-height:1.45}.status.error{color:#ffbfb0}.status:not(:empty){margin:5px 0 10px}
+#actions{position:sticky;bottom:0;margin:10px -2px -5px;padding:8px 2px max(8px,env(safe-area-inset-bottom));background:var(--page);border-top:1px solid var(--line);z-index:1}#apply{width:100%;font-weight:700;color:#172a16;background:var(--active)}#reload{margin-bottom:6px}
+@media(max-width:360px){.fields{grid-template-columns:1fr}main{padding-inline:12px}.row-tools{gap:4px}}
 </style>
-<main>
-  <h1>ريموت شاشة الجامع</h1>
-  <p id="state" role="status">جارٍ التحقق من الاقتران…</p>
-  <strong id="code" dir="ltr" hidden></strong>
-  <div class="remote">
-    <span></span><button data-key="up" aria-label="أعلى" disabled>▲</button><span></span>
-    <button data-key="left" aria-label="يسار" disabled>◀</button><button data-key="ok" disabled>OK</button><button data-key="right" aria-label="يمين" disabled>▶</button>
-    <button data-key="back" disabled>رجوع</button><button data-key="down" aria-label="أسفل" disabled>▼</button><button data-key="menu" disabled>الإعدادات</button>
-  </div>
-  <label for="text">كتابة في حقل النص المفتوح على التلفاز</label>
-  <textarea id="text" maxlength="2000" rows="3" disabled></textarea>
-  <button id="send" disabled>إرسال النص</button>
-  <p><small>استخدم شبكة إدارة الجامع الخاصة. الاتصال المحلي غير مشفّر، فتجنّب كتابة أي بيانات حساسة. تنتهي الجلسة بعد 15 دقيقة.</small></p>
+</head>
+<body><main>
+<header><h1 data-i="title">شاشة الجامع</h1><button type="button" id="language" lang="en">English</button></header>
+<p id="state" role="status" aria-live="polite"></p><strong id="code" dir="ltr" hidden></strong>
+<nav role="tablist" data-aria="tabs"><button id="remote-tab" role="tab" aria-controls="remote-panel" aria-selected="true" data-i="remote">الريموت</button><button id="settings-tab" role="tab" aria-controls="settings-panel" aria-selected="false" tabindex="-1" data-i="settings" disabled>الإعدادات</button></nav>
+<section id="remote-panel" role="tabpanel" aria-labelledby="remote-tab">
+<div class="card"><div class="remote">
+<span></span><button data-key="up" data-aria="up" disabled>▲</button><span></span>
+<button data-key="left" data-aria="left" disabled>◀</button><button data-key="ok" disabled>OK</button><button data-key="right" data-aria="right" disabled>▶</button>
+<button data-key="back" data-i="back" disabled>رجوع</button><button data-key="down" data-aria="down" disabled>▼</button><button data-key="menu" data-i="tvMenu" disabled>القائمة</button>
+</div><label class="field"><span data-i="quickText"></span><textarea id="text" maxlength="2000" rows="3" disabled></textarea></label>
+<button type="button" id="send" data-i="send" disabled></button></div><p class="pair-note"><small data-i="pairNote"></small></p>
+</section>
+<section id="settings-panel" role="tabpanel" aria-labelledby="settings-tab" hidden>
+<form id="editor" novalidate><fieldset id="editor-fields" disabled>
+<details open><summary data-i="identity"></summary><label class="field"><span data-i="name"></span><input id="mosqueName" maxlength="180" type="text" required dir="auto"></label><label class="field"><span data-i="district"></span><input id="neighborhood" maxlength="180" type="text" dir="auto"></label></details>
+<details><summary data-i="announcements"></summary><div id="announcements"></div><button type="button" class="add" id="add-ann" data-i="addAnn"></button></details>
+<details><summary data-i="schedule"></summary><h2 data-i="iqama"></h2><div id="offsets" class="fields"></div>
+<div class="fields"><label class="field"><span data-i="jumuah"></span><input type="time" id="jumuahTime"></label><label class="field"><span data-i="prayerDuration"></span><input type="number" min="1" max="60" step="1" required id="prayerModeMinutes"></label></div>
+<h2 data-i="manual"></h2><div id="overrides"></div><button type="button" class="add" id="add-override" data-i="addOverride"></button></details>
+<details><summary data-i="display"></summary><label class="check"><input type="checkbox" id="silentPhoneReminder"><span data-i="silent"></span></label>
+<div class="fields"><label class="field"><span data-i="adhkar"></span><select id="postPrayerMinutes"><option value="0" data-i="off"></option><option value="3" data-i="min3"></option><option value="5" data-i="min5"></option><option value="7" data-i="min7"></option></select></label>
+<label class="field"><span data-i="clock"></span><select id="hourFormat"><option value="12" data-i="hour12"></option><option value="24" data-i="hour24"></option></select></label>
+<label class="field"><span data-i="dateDisplay"></span><select id="dateStyle"><option value="both" data-i="both"></option><option value="hijri" data-i="hijri"></option><option value="gregorian" data-i="gregorian"></option><option value="none" data-i="hideDates"></option></select></label></div></details>
+<details><summary data-i="backup"></summary><p><small data-i="backupHelp"></small></p><div class="backup-actions"><button type="button" id="download" data-i="export"></button><label class="file-button"><span data-i="import"></span><input type="file" accept=".json,application/json" id="backupFile"></label></div></details>
+</fieldset><div id="actions"><p id="form-status" class="status" role="status" aria-live="polite"></p><button type="button" id="reload" data-i="reload" hidden></button><button type="submit" id="apply" data-i="save" disabled></button></div></form>
+</section>
 </main>
 <script>
 'use strict';
-const token=location.hash.slice(1);
-history.replaceState(null,'',location.pathname);
-const state=document.getElementById('state'), code=document.getElementById('code');
-const controls=document.querySelectorAll('button,textarea');
-const expired='انتهت الجلسة أو رُفض الاقتران. افتح الاقتران من التلفاز وامسح الرمز الجديد.';
-let client='', approved=false, commandSequence=0;
-function setApproved(value){
-  approved=value;
-  controls.forEach(control=>{control.disabled=!value;});
+const token = location.hash.slice(1);
+history.replaceState(null, '', location.pathname);
+const $ = id => document.getElementById(id);
+const prayers = ['fajr','dhuhr','asr','maghrib','isha'];
+const words = {
+  title:['شاشة الجامع','Mosque TV'], tabs:['التحكم بالشاشة','TV controls'], remote:['الريموت','Remote'], settings:['الإعدادات','Settings'],
+  up:['أعلى','Up'],down:['أسفل','Down'],left:['يسار','Left'],right:['يمين','Right'],back:['رجوع','Back'],tvMenu:['الإعدادات','TV settings'],
+  quickText:['الكتابة في حقل النص المفتوح على التلفاز','Type into the text field open on the TV'],send:['إرسال النص','Send text'],
+  pairNote:['استخدم شبكة إدارة الجامع الخاصة. الاتصال المحلي غير مشفّر. تنتهي الجلسة بعد 15 دقيقة أو عند إيقافها من التلفزيون.','Use the mosque’s private network. The local connection is unencrypted. Pairing ends after 15 minutes or when closed on the TV.'],
+  checking:['جارٍ التحقق من الاقتران…','Checking pairing…'],pending:['طابق هذا الرقم مع الرقم على التلفزيون، ثم وافق باستخدام ريموت التلفزيون.','Match this number on the TV, then approve using the TV remote.'],
+  connected:['متصل محليًا بشاشة الجامع','Connected to Mosque TV'],expired:['انتهت الجلسة أو رُفض الاقتران. افتح الاقتران من التلفزيون وامسح الرمز الجديد.','Pairing ended or was declined. Open pairing on the TV and scan the new code.'],
+  approvalTimeout:['انتهت مهلة الموافقة. افتح الاقتران من التلفزيون وامسح الرمز الجديد.','Approval timed out. Open pairing on the TV and scan the new code.'],
+  wait:['انتظر لحظة قبل إرسال أمر آخر.','Wait a moment before sending another command.'],
+  unconfirmed:['لم يتأكد وصول الأمر. تحقّق من الشاشة قبل إرساله مرة أخرى.','The command was not confirmed. Check the TV before sending it again.'],
+  identity:['بيانات الجامع','Mosque identity'],name:['اسم الجامع','Mosque name'],district:['الحي','District / neighborhood'],
+  announcements:['شريط الإعلانات','Announcements'],addAnn:['إضافة إعلان','Add announcement'],annLabel:['عنوان الإعلان (اختياري)','Label (optional)'],annText:['نص الإعلان','Announcement text'],
+  earlier:['تقديم','Move up'],later:['تأخير','Move down'],remove:['حذف','Remove'],
+  schedule:['الصلاة والإقامة','Prayer and iqama'],iqama:['المدة بين الأذان والإقامة (دقائق)','Minutes from adhan to iqama'],
+  fajr:['الفجر','Fajr'],dhuhr:['الظهر','Dhuhr'],asr:['العصر','Asr'],maghrib:['المغرب','Maghrib'],isha:['العشاء','Isha'],
+  jumuah:['إقامة الجمعة (اختياري)','Jumu’ah iqama (optional)'],prayerDuration:['مدة شاشة الصلاة (دقائق)','Prayer screen duration (minutes)'],
+  manual:['تعديل وقت الأذان لتاريخ محدد','Adhan overrides by date'],addOverride:['إضافة تعديل','Add override'],date:['التاريخ','Date'],prayer:['الصلاة','Prayer'],time:['وقت الأذان','Adhan time'],
+  display:['العرض والتنبيهات','Display and alerts'],silent:['تنبيه إسكات الجوالات','Silent phone reminder'],adhkar:['أذكار ما بعد الصلاة','Post-prayer adhkar'],
+  off:['إيقاف','Off'],min3:['٣ دقائق','3 minutes'],min5:['٥ دقائق','5 minutes'],min7:['٧ دقائق','7 minutes'],
+  clock:['نظام الساعة','Clock format'],hour12:['١٢ ساعة','12 hour'],hour24:['٢٤ ساعة','24 hour'],dateDisplay:['التاريخ المعروض','Dates shown'],
+  both:['الهجري والميلادي','Hijri and Gregorian'],hijri:['الهجري فقط','Hijri only'],gregorian:['الميلادي فقط','Gregorian only'],hideDates:['إخفاء التاريخين','Hide both dates'],
+  backup:['النسخ الاحتياطي والاستعادة','Backup and restore'],backupHelp:['ينزّل التصدير الإعدادات المحفوظة على الشاشة. راجع الملف المستورد ثم اضغط حفظ لتطبيقه.','Export downloads the settings saved on the TV. Review imported settings, then tap Save to apply them.'],
+  export:['تنزيل نسخة JSON','Download JSON backup'],import:['استيراد ملف JSON','Import JSON backup'],
+  save:['حفظ وتطبيق على الشاشة','Save & Apply to TV'],reload:['تحميل إعدادات التلفزيون مجددًا','Reload TV settings'],
+  discard:['تحميل إعدادات التلفزيون وإلغاء مسودة الهاتف؟','Reload TV settings and discard your phone draft?'],
+  loading:['جارٍ جلب إعدادات الشاشة…','Loading TV settings…'],saving:['جارٍ تطبيق الإعدادات على الشاشة…','Applying settings to the TV…'],
+  saved:['حُفظت الإعدادات وطُبّقت على شاشة الجامع.','Settings saved and applied to the TV.'],
+  imported:['حُمّلت النسخة على الهاتف. راجعها ثم اضغط حفظ وتطبيق على الشاشة.','Backup loaded on the phone. Review it, then tap Save & Apply to TV.'],
+  invalid:['راجع القيم المحددة. قد يحتوي أحد الحقول على نص غير صالح أو طويل.','Check the highlighted fields. One or more entries may contain invalid or overly long text.'],
+  invalidBackup:['ملف غير صالح. اختر نسخة JSON من إعدادات الجامع بحجم 96 كيلوبايت أو أقل.','Invalid backup. Select a Mosque TV settings JSON file of 96 KiB or less.'],
+  scheduleError:['تتعارض المواعيد مع جدول الشاشة. راجع التواريخ وترتيب الأذان والإقامة.','These times conflict with the TV timetable. Check the dates and the order of adhan and iqama.'],
+  duplicate:['يوجد تعديل آخر للصلاة نفسها في هذا التاريخ.','This prayer already has an override on that date.'],
+  conflict:['تغيّرت إعدادات الشاشة. مسودتك محفوظة هنا. أعد تحميل الإعدادات قبل الحفظ.','The TV settings changed. Your draft is still here. Reload the TV settings before saving.'],
+  busy:['الشاشة مشغولة. أبقِ جلسة الاقتران مفتوحة وحاول مجددًا.','The TV is busy. Keep pairing open and try again.'],
+  unavailable:['تعذّر جلب الإعدادات. افتح العرض الرئيسي على التلفزيون ثم أعد المحاولة.','Settings are unavailable. Open the main display on the TV, then retry.'],
+  storage:['تعذّر حفظ الإعدادات على التلفزيون. تحقّق من مساحة التخزين وحاول مجددًا.','The TV could not save the settings. Check its storage and try again.'],
+  uncertain:['تعذّر تأكيد الحفظ. تحقّق من الشاشة أو أعد تحميل إعداداتها.','Save could not be confirmed. Check the TV or reload its settings.']
+};
+let language = /^en\b/i.test(navigator.language || '') ? 'en' : 'ar';
+const t = key => words[key][language === 'en' ? 1 : 0];
+let client = '', approved = false, commandSequence = 0;
+let snapshot = null, importedBackup = null, pending = false, dirty = false, stale = false;
+let connectionKey = 'checking', formKey = '', formError = false;
+// Restore carries both the full backup and the phone's reviewed edits.
+const maxBytes = 128 * 1024;
+function connection(key) { connectionKey=key; $('state').textContent=t(key); }
+function message(key,error=false) {
+  formKey=key; formError=error;
+  $('form-status').textContent=key ? t(key) : '';
+  $('form-status').classList.toggle('error',error);
 }
-function finishPairing(message){
-  setApproved(false);
-  code.textContent='';code.hidden=true;state.textContent=message;
+function translate() {
+  document.documentElement.lang=language;
+  document.documentElement.dir=language==='ar'?'rtl':'ltr';
+  document.title=t('title');
+  document.querySelectorAll('[data-i]').forEach(node=>{node.textContent=t(node.dataset.i);});
+  document.querySelectorAll('[data-aria]').forEach(node=>{node.setAttribute('aria-label',t(node.dataset.aria));});
+  $('language').textContent=language==='ar'?'English':'العربية';
+  $('language').lang=language==='ar'?'en':'ar';
+  connection(connectionKey); message(formKey,formError);
 }
-async function request(route,body,timeout,receive){
+function syncControls() {
+  document.querySelectorAll('[data-key]').forEach(button=>{button.disabled=!approved;});
+  $('send').disabled=$('text').disabled=$('settings-tab').disabled=!approved;
+  $('editor-fields').disabled=!approved || !snapshot || pending;
+  $('apply').disabled=!approved || !snapshot || pending || stale || !dirty;
+  $('reload').hidden=pending || !approved || (!stale && (Boolean(snapshot) || !formError));
+}
+function finishPairing(key) {
+  approved=false; ++commandSequence;
+  $('code').textContent=''; $('code').hidden=true;
+  connection(key); syncControls();
+}
+async function request(route,body,timeout,receive) {
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),timeout);
-  try{
+  try {
     const response=await fetch(route,{
       method:body?'POST':'GET',headers:{'X-Mosque-Token':token,'X-Mosque-Client':client,...(body?{'Content-Type':'application/json'}:{})},
-      body:body?JSON.stringify(body):undefined,signal:controller.signal,redirect:'error',
-      credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store'
+      body:body?JSON.stringify(body):undefined,signal:controller.signal,redirect:'error',credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store'
     });
     return await receive(response);
-  }finally{clearTimeout(timer);}
+  } finally { clearTimeout(timer); }
 }
-async function pair(){
+async function pair() {
   const until=performance.now()+60000;
-  while(performance.now()<until){
-    const {status,data}=await request('/api/status',null,Math.min(5000,until-performance.now()),async response=>({
-      status:response.status,data:response.ok?await response.json():null
-    }));
-    if(performance.now()>=until)break;
-    if(status===200&&data?.connected===true){
-      code.textContent='';code.hidden=true;state.textContent='متصل محليًا بشاشة الجامع';setApproved(true);return;
+  while(performance.now()<until) {
+    const {status,data}=await request('/api/status',null,Math.min(5000,until-performance.now()),async r=>({status:r.status,data:r.ok?await r.json():null}));
+    if(performance.now()>=until) break;
+    if(status===200 && data?.connected===true) {
+      $('code').textContent=''; $('code').hidden=true; approved=true;
+      connection('connected'); syncControls(); return;
     }
-    if(status!==202||data?.pending!==true||typeof data.code!=='string'||!/^\d{6}$/.test(data.code)){
-      finishPairing(expired);return;
+    if(status!==202 || data?.pending!==true || typeof data.code!=='string' || !/^\d{6}$/.test(data.code)) {
+      finishPairing('expired'); return;
     }
-    code.textContent=data.code;code.hidden=false;
-    state.textContent='طابق هذا الرقم مع الرقم على التلفاز، ثم وافق باستخدام ريموت التلفاز.';
+    $('code').textContent=data.code; $('code').hidden=false; connection('pending');
     await new Promise(resolve=>setTimeout(resolve,Math.min(2000,Math.max(0,until-performance.now()))));
   }
-  finishPairing('انتهت مهلة الموافقة. افتح الاقتران من التلفاز وامسح الرمز الجديد.');
+  finishPairing('approvalTimeout');
 }
-async function command(route,body){
-  if(!approved)return;
+async function command(route,body) {
+  if(!approved) return;
   const order=++commandSequence;
-  try{
+  try {
     const status=await request(route,body,5000,response=>response.status);
-    if(status===403){finishPairing(expired);return;}
-    if(!approved||order!==commandSequence)return;
-    if(status===429){state.textContent='انتظر لحظة قبل إرسال أمر آخر.';return;}
-    if(status!==200)throw Error('Unconfirmed');
-    state.textContent='متصل محليًا بشاشة الجامع';
-  }catch(_){
-    if(approved&&order===commandSequence)state.textContent='لم يتأكد وصول الأمر. تحقّق من الشاشة قبل إرساله مرة أخرى.';
+    if(status===403) { finishPairing('expired'); return; }
+    if(!approved || order!==commandSequence) return;
+    if(status===429) { connection('wait'); return; }
+    if(status!==200) throw Error('Unconfirmed');
+    connection('connected');
+  } catch(_) { if(approved && order===commandSequence) connection('unconfirmed'); }
+}
+function tab(settings) {
+  if(settings && !approved) return;
+  const remote=!settings;
+  $('remote-panel').hidden=settings; $('settings-panel').hidden=remote;
+  $('remote-tab').setAttribute('aria-selected',String(remote)); $('settings-tab').setAttribute('aria-selected',String(settings));
+  $('remote-tab').tabIndex=remote?0:-1; $('settings-tab').tabIndex=settings?0:-1;
+  if(settings && !snapshot && !pending) loadSettings();
+}
+function copyNode(tag,key) {
+  const node=document.createElement(tag);
+  node.dataset.i=key; node.textContent=t(key); return node;
+}
+function field(label,control) {
+  const node=document.createElement('label'); node.className='field';
+  node.append(copyNode('span',label),control); return node;
+}
+function input(type,name,value) {
+  const node=document.createElement('input'); node.type=type; node.name=name; node.value=value; return node;
+}
+function selectPrayer(value) {
+  const select=document.createElement('select'); select.name='prayer';
+  for(const key of prayers) { const opt=copyNode('option',key); opt.value=key; select.append(opt); }
+  select.value=value; return select;
+}
+function rowButton(container,key,action) {
+  const button=copyNode('button',key); button.type='button'; button.dataset.action=action; container.append(button); return button;
+}
+function entry() {
+  const node=document.createElement('div'); node.className='entry'; return node;
+}
+function toolsRow() {
+  const node=document.createElement('div'); node.className='row-tools'; return node;
+}
+function appendAnnouncement(item) {
+  const row=entry(), tools=toolsRow();
+  const label=input('text','label',item.label); label.maxLength=60; label.dir='auto';
+  const text=document.createElement('textarea'); text.name='text'; text.rows=2; text.required=true; text.maxLength=300; text.value=item.text; text.dir='auto';
+  row.append(field('annLabel',label),field('annText',text),tools);
+  rowButton(tools,'earlier','up'); rowButton(tools,'later','down'); rowButton(tools,'remove','remove');
+  $('announcements').append(row); return row;
+}
+function appendOverride(item) {
+  const row=entry(), tools=toolsRow(), group=document.createElement('div'); group.className='fields';
+  const date=input('date','date',item.date), time=input('time','time',item.time); date.required=time.required=true;
+  group.append(field('date',date),field('prayer',selectPrayer(item.prayer)),field('time',time)); row.append(group,tools);
+  rowButton(tools,'remove','remove'); $('overrides').append(row); return row;
+}
+function listControls() {
+  const children=Array.from($('announcements').children);
+  children.forEach((row,index)=>{
+    row.querySelector('[data-action=up]').disabled=index===0;
+    row.querySelector('[data-action=down]').disabled=index===children.length-1;
+  });
+  $('add-ann').disabled=children.length>=16; $('add-override').disabled=$('overrides').children.length>=80;
+}
+function edit() { dirty=true; if(!stale) message(''); syncControls(); }
+function onRowAction(event) {
+  const button=event.target.closest('button[data-action]');
+  if(!button || !approved || pending || !snapshot) return;
+  const row=button.closest('.entry'),parent=row.parentNode;
+  let nextFocus=button;
+  if(button.dataset.action==='remove') {
+    nextFocus=(row.nextElementSibling || row.previousElementSibling)?.querySelector('input,textarea') || $(parent.id==='announcements'?'add-ann':'add-override');
+    row.remove();
+  } else if(button.dataset.action==='up' && row.previousElementSibling) parent.insertBefore(row,row.previousElementSibling);
+  else if(button.dataset.action==='down' && row.nextElementSibling) parent.insertBefore(row.nextElementSibling,row);
+  listControls(); edit(); (nextFocus.disabled ? row.querySelector('input,textarea') : nextFocus).focus();
+}
+function showSettings(settings) {
+  for(const key of ['mosqueName','neighborhood','jumuahTime','prayerModeMinutes','postPrayerMinutes','hourFormat','dateStyle']) $(key).value=settings[key];
+  $('silentPhoneReminder').checked=settings.silentPhoneReminder;
+  for(const p of prayers) $('offset-'+p).value=settings.iqamaOffsets[p];
+  $('announcements').replaceChildren(); settings.announcements.forEach(appendAnnouncement);
+  $('overrides').replaceChildren(); settings.manualOverrides.forEach(appendOverride);
+  listControls();
+}
+function readSettings() {
+  const readRow=(row,name)=>row.querySelector('[name='+name+']').value;
+  return {
+    mosqueName:$('mosqueName').value,neighborhood:$('neighborhood').value,
+    announcements:Array.from($('announcements').children,r=>({label:readRow(r,'label'),text:readRow(r,'text')})),
+    iqamaOffsets:Object.fromEntries(prayers.map(p=>[p,Number($('offset-'+p).value)])),
+    jumuahTime:$('jumuahTime').value,prayerModeMinutes:Number($('prayerModeMinutes').value),
+    manualOverrides:Array.from($('overrides').children,r=>({date:readRow(r,'date'),prayer:readRow(r,'prayer'),time:readRow(r,'time')})),
+    silentPhoneReminder:$('silentPhoneReminder').checked,postPrayerMinutes:Number($('postPrayerMinutes').value),
+    hourFormat:Number($('hourFormat').value),dateStyle:$('dateStyle').value
+  };
+}
+// Markup-like characters are plain text in values/textContent. Reject control and directional override characters.
+const unsafeText=/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/;
+const cleanText=(value,max,required=false)=>typeof value==='string' && value.length<=max && !unsafeText.test(value) && (!required || value.trim().length>0);
+const integer=(v,min,max)=>Number.isInteger(v) && v>=min && v<=max;
+const plain=v=>v!==null && typeof v==='object' && !Array.isArray(v);
+const has=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
+const sameKeys=(object,keys)=>plain(object) && Object.keys(object).length===keys.length && keys.every(k=>has(object,k));
+const timeValid=v=>typeof v==='string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(v);
+function dateValid(v) {
+  if(typeof v!=='string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const stamp=Date.parse(v+'T12:00:00Z'); return Number.isFinite(stamp) && new Date(stamp).toISOString().slice(0,10)===v;
+}
+function validateEditor(s,allowEmptyName=false) {
+  const invalid=(field,index,part,key='invalid')=>({field,index,part,key});
+  if(!plain(s) || !cleanText(s.mosqueName,180,!allowEmptyName)) return invalid('mosqueName');
+  if(!cleanText(s.neighborhood,180)) return invalid('neighborhood');
+  if(!Array.isArray(s.announcements) || s.announcements.length>16) return invalid('announcements');
+  for(const [i,item] of s.announcements.entries()) {
+    if(!sameKeys(item,['label','text']) || !cleanText(item.label,60)) return invalid('announcements',i,'label');
+    if(!cleanText(item.text,300,true)) return invalid('announcements',i,'text');
   }
+  if(!sameKeys(s.iqamaOffsets,prayers)) return invalid('offset-fajr');
+  for(const p of prayers) if(!integer(s.iqamaOffsets[p],1,180)) return invalid('offset-'+p);
+  if(s.jumuahTime!=='' && !timeValid(s.jumuahTime)) return invalid('jumuahTime');
+  if(!integer(s.prayerModeMinutes,1,60)) return invalid('prayerModeMinutes');
+  if(!Array.isArray(s.manualOverrides) || s.manualOverrides.length>80) return invalid('overrides');
+  const dates=new Set();
+  for(const [i,item] of s.manualOverrides.entries()) {
+    if(!sameKeys(item,['date','prayer','time']) || !dateValid(item.date)) return invalid('overrides',i,'date');
+    if(!prayers.includes(item.prayer)) return invalid('overrides',i,'prayer');
+    if(!timeValid(item.time)) return invalid('overrides',i,'time');
+    const key=item.date+'-'+item.prayer; if(dates.has(key)) return invalid('overrides',i,'date','duplicate');
+    dates.add(key);
+  }
+  if(typeof s.silentPhoneReminder!=='boolean') return invalid('silentPhoneReminder');
+  if(![0,3,5,7].includes(s.postPrayerMinutes)) return invalid('postPrayerMinutes');
+  if(![12,24].includes(s.hourFormat)) return invalid('hourFormat');
+  if(!['both','gregorian','hijri','none'].includes(s.dateStyle)) return invalid('dateStyle');
+  return null;
+}
+function showInvalid(issue) {
+  let field=$(issue.field);
+  if(issue.part) field=field.children[issue.index]?.querySelector('[name='+issue.part+']') || field;
+  const group=field.closest('details'); if(group) group.open=true;
+  field.focus(); if(field.reportValidity) field.reportValidity(); message(issue.key,true);
+}
+function settingsFromBackup(backup,live) {
+  // Accept TV settings exports, not a timetable or a full installation snapshot.
+  const keys=['schemaVersion','mosque','iqama','prayerModeMinutes','slideSeconds','digitStyle','location','announcements','manualOverrides','displayPreferences','silentPhoneReminder','postPrayerMinutes','adhanAdjustments','donation'];
+  if(!plain(backup) || Object.keys(backup).some(k=>!keys.includes(k)) || backup.schemaVersion!==1
+    || !plain(backup.mosque?.fields) || !Array.isArray(backup.mosque.custom) || !plain(backup.iqama)
+    || !Array.isArray(backup.iqama.overrides) || !plain(backup.location) || !integer(backup.slideSeconds,5,300)
+    || !['western','arabic'].includes(backup.digitStyle)) throw Error('backup');
+  const display=backup.displayPreferences;
+  if(display!==undefined && !plain(display)) throw Error('backup');
+  const friday=backup.iqama.overrides.find(o=>o?.kind==='weekday' && o.match==='5' && o.prayer==='dhuhr');
+  const settings={
+    mosqueName:backup.mosque.fields.name?.value,neighborhood:display?.neighborhood ?? live.neighborhood,
+    announcements:backup.announcements ?? live.announcements,iqamaOffsets:backup.iqama.offsets,
+    jumuahTime:friday?.time ?? '',prayerModeMinutes:backup.prayerModeMinutes,
+    manualOverrides:backup.manualOverrides ?? live.manualOverrides,silentPhoneReminder:backup.silentPhoneReminder ?? true,
+    postPrayerMinutes:backup.postPrayerMinutes ?? 5,hourFormat:display?.hourFormat ?? live.hourFormat,dateStyle:display?.dateStyle ?? live.dateStyle
+  };
+  if(validateEditor(settings,!live.mosqueName)) throw Error('backup');
+  return settings;
+}
+function checkState(data) {
+  if(!data || data.ok!==true || !Number.isSafeInteger(data.revision) || data.revision<1 || validateEditor(data.settings,true) || !plain(data.backup) || data.backup.schemaVersion!==1) throw Error('state');
+}
+function acceptState(data) {
+  checkState(data);
+  showSettings(data.settings); $('mosqueName').required=Boolean(data.settings.mosqueName);
+  snapshot=data; importedBackup=null; dirty=false; stale=false;
+}
+function apiError(status,code,isSave) {
+  if(status===403) { finishPairing('expired'); message('expired',true); return; }
+  if(status===409 && !code) code='conflict';
+  if(code==='conflict') stale=true;
+  const errors={conflict:'conflict',busy:'busy',storage:'storage',schedule:'scheduleError',unavailable:'unavailable',invalid:'invalid'};
+  const key=has(errors,code) ? errors[code] : '';
+  message(key || (status===429?'wait':isSave?'uncertain':'unavailable'),true);
+}
+async function settingsRequest(route,body,timeout) {
+  return request(route,body,timeout,async r=>{
+    let data=null;
+    try{data=await r.json();}catch(_){/* Session rejection can have an empty body. */}
+    return {status:r.status,data};
+  });
+}
+async function loadSettings() {
+  if(!approved || pending) return;
+  pending=true; message('loading'); syncControls();
+  try {
+    const {data,status}=await settingsRequest('/api/pairing/state',null,10000);
+    if(!approved) return;
+    if(status!==200 || !data?.ok) { apiError(status,data?.error,false); return; }
+    acceptState(data); message('');
+  } catch(_) { if(approved) message('unavailable',true); }
+  finally { pending=false; syncControls(); }
+}
+async function applySettings(event) {
+  event.preventDefault();
+  if(!approved || pending || !snapshot || stale || !dirty) return;
+  const settings=readSettings(), issue=validateEditor(settings,!snapshot.settings.mosqueName);
+  if(issue) { showInvalid(issue); return; }
+  const body={revision:snapshot.revision,settings};
+  if(importedBackup) body.backup=importedBackup;
+  if(new Blob([JSON.stringify(body)]).size>maxBytes) {message('invalidBackup',true);return;}
+  pending=true; message('saving'); syncControls();
+  try {
+    const {data,status}=await settingsRequest('/api/pairing/apply-settings',body,20000);
+    if(!approved) return;
+    if(status!==200 || data?.ok!==true) { apiError(status,data?.error,true); return; }
+    acceptState(data); message('saved');
+  } catch(_) { if(approved) {stale=true;message('uncertain',true);} }
+  finally { pending=false; syncControls(); }
+}
+async function importBackup() {
+  const picker=$('backupFile'), file=picker.files?.[0]; picker.value='';
+  if(!file || !snapshot || !approved || pending) return;
+  if(file.size>maxBytes) { message('invalidBackup',true); return; }
+  pending=true; syncControls();
+  try {
+    const raw=await file.text();
+    if(!approved) return;
+    const backup=JSON.parse(raw,(key,value)=>{
+      if(['__proto__','constructor','prototype'].includes(key) || (typeof value==='string' && unsafeText.test(value))) throw Error('backup');
+      return value;
+    });
+    const settings=settingsFromBackup(backup,snapshot.settings);
+    showSettings(settings); importedBackup=backup; dirty=true;
+    message(stale?'conflict':'imported',stale);
+  } catch(_) { message('invalidBackup',true); }
+  finally {pending=false; syncControls();}
+}
+async function downloadBackup() {
+  if(!approved || pending || !snapshot) return;
+  pending=true; syncControls();
+  try {
+    const {status,data}=await settingsRequest('/api/pairing/state',null,10000);
+    if(!approved) return;
+    if(status!==200 || !data?.ok) { apiError(status,data?.error,false); return; }
+    checkState(data);
+    if(data.revision!==snapshot.revision) {
+      if(dirty) { stale=true; message('conflict',true); }
+      else { acceptState(data); message(''); }
+    }
+    const blob=new Blob([JSON.stringify(data.backup,null,2)+'\n'],{type:'application/json'});
+    const url=URL.createObjectURL(blob), link=document.createElement('a');
+    try { link.href=url; link.download='mosque-settings.json'; document.body.append(link); link.click(); }
+    finally { link.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000); }
+  } catch(_) { if(approved) message('unavailable',true); }
+  finally { pending=false; syncControls(); }
+}
+for(const p of prayers) {
+  const n=input('number',p,''); n.id='offset-'+p; n.min='1'; n.max='180'; n.step='1'; n.required=true;
+  $('offsets').append(field(p,n));
 }
 document.querySelectorAll('[data-key]').forEach(button=>button.addEventListener('click',()=>command('/api/key',{key:button.dataset.key})));
-document.getElementById('send').addEventListener('click',()=>command('/api/text',{text:document.getElementById('text').value}));
-try{
-  if(!/^[0-9a-f]{48}$/.test(token))throw Error('Invalid QR');
+$('send').addEventListener('click',()=>command('/api/text',{text:$('text').value}));
+$('language').addEventListener('click',()=>{language=language==='ar'?'en':'ar';translate();});
+$('remote-tab').addEventListener('click',()=>tab(false));
+$('settings-tab').addEventListener('click',()=>tab(true));
+document.querySelector('[role=tablist]').addEventListener('keydown',event=>{
+  if(!approved || !['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+  event.preventDefault();
+  const settings=event.key==='Home'?false:event.key==='End'?true:$('settings-panel').hidden;
+  tab(settings); $(settings?'settings-tab':'remote-tab').focus();
+});
+$('editor').addEventListener('submit',applySettings);
+function markInput(event) { if(event.target.type!=='file' && snapshot && approved && !pending)edit(); }
+$('editor-fields').addEventListener('input',markInput);
+$('editor-fields').addEventListener('change',markInput);
+$('announcements').addEventListener('click',onRowAction); $('overrides').addEventListener('click',onRowAction);
+$('add-ann').addEventListener('click',()=>{
+  if(!approved || !snapshot || pending || $('announcements').children.length>=16) return;
+  const row=appendAnnouncement({label:'',text:''}); listControls();edit();row.querySelector('[name=text]').focus();
+});
+$('add-override').addEventListener('click',()=>{
+  if(!approved || !snapshot || pending || $('overrides').children.length>=80) return;
+  const row=appendOverride({date:'',prayer:'fajr',time:''}); listControls();edit();row.querySelector('[name=date]').focus();
+});
+$('reload').addEventListener('click',()=>{if(!dirty || confirm(t('discard')))loadSettings();});
+$('download').addEventListener('click',downloadBackup); $('backupFile').addEventListener('change',importBackup);
+translate(); syncControls();
+try {
+  if(!/^[0-9a-f]{48}$/.test(token)) throw Error('Invalid QR');
   client=Array.from(crypto.getRandomValues(new Uint8Array(16)),byte=>byte.toString(16).padStart(2,'0')).join('');
-  pair().catch(()=>finishPairing(expired));
-}catch(_){finishPairing(expired);}
+  pair().catch(()=>finishPairing('expired'));
+} catch(_) { finishPairing('expired'); }
 </script>
-</html>
+</body></html>

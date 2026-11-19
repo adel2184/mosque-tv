@@ -118,14 +118,16 @@ The [English setup guide](docs/SETUP_EN.md) covers every step and timetable sour
 | On-screen gear | Open the control center; hidden during prayer mode |
 | MENU, if sent by your remote | Shortcut to the control center |
 
-Open **Control centre → Mosque settings** to adjust details, iqama, and announcements. Choose **Save and apply** to commit the draft. In 2.3.3, pair one phone on staff-only Wi-Fi by scanning the TV’s QR, comparing the codes and approving with the TV remote. The local HTTP session lasts up to 15 minutes. Use the physical remote for sensitive text. [Control-center guide (Arabic)](docs/CONTROL_CENTER_AR.md).
+Open **Control centre → Mosque settings** to edit directly with the remote.
+
+On staff Wi-Fi, open phone pairing on the TV, scan the QR code and compare the six digits before approving with the physical remote. **Remote** keeps the D-pad and quick text controls. In **Settings**, edit the mosque identity, reorder ticker announcements, change iqama and date-specific prayer times, or adjust the clock, dates and alerts. The phone keeps a local draft until you choose **Save & Apply to TV**. You can also export or restore a settings JSON file. The connection uses local HTTP. Closing the TV pairing session disconnects the phone.
 
 <a id="updates"></a>
 ## Update while keeping settings
 
 Open **Version and updates → Check for an app update**, download the release, and select **Install**. Complete Android's permission and installation prompts if requested. Updating requires a temporary internet connection; local display continues without internet. You can also install the new APK manually over the existing app.
 
-Installing an update over the existing app keeps the mosque profile and timetable. Version 2.4.0 reads older settings backups and supplies defaults for the two new options. The published 2.3.3 release is available through the updater. Version 2.4.0 will appear there once published. [Releases](https://github.com/adel2184/mosque-tv/releases/latest) · [Verification report (Arabic)](android/TEST_REPORT_TV.md)
+Installing 2.5.0 over 2.4.0 retains your mosque profile and prayer timetable. The TV updater shows the latest published release. [Releases](https://github.com/adel2184/mosque-tv/releases/latest) · [Verification report (Arabic)](android/TEST_REPORT_TV.md)
 
 <a id="faq"></a>
 ## Frequently asked questions

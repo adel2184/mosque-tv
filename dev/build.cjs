@@ -16,7 +16,7 @@ if(catalogBytes.length!==catalogManifest.catalogBytes||crypto.createHash('sha256
 fs.writeFileSync(path.join(root,'data/location-catalog.json'),catalogBytes);
 fs.writeFileSync(path.join(root,'assets/data/location-catalog.js'),'window.MosquePlaces='+JSON.stringify(JSON.parse(catalogBytes.toString('utf8'))).replace(/</g,'\\u003c')+';\n');
 const preload='<script src="assets/data/location-catalog.js"></script>\n'+[['prayer-calculation-library','dev/vendor/adhan/package/lib/bundles/adhan.umd.js'],['location-engine-code','dev/location-engine.js'],['profile-store-code','dev/profile-store.js'],['locale-code','dev/locale.js'],['setup-provider-code','dev/setup-provider.js']].map(([id,file])=>'<script id="'+id+'">\n'+read(file)+'\n</script>').join('\n');
-const source=['dev/prayer-context.js','dev/app.js','dev/control-center.js','dev/setup-wizard.js','dev/profile-adapter.js'].map(read).join('\n');
+const source=['dev/prayer-context.js','dev/phone-settings.js','dev/app.js','dev/control-center.js','dev/setup-wizard.js','dev/profile-adapter.js'].map(read).join('\n');
 new Function(source);
 const html=read('dev/shell.html').replace('</style>',()=>['dev/control-center.css','dev/setup-wizard.css','dev/locale.css','dev/prayer-display.css'].map(read).join('\n')+'\n</style>').replace('<!--EMBEDDED_DATA-->',()=>data).replace('<!--APPLICATION_SCRIPT-->',()=>preload+'\n<script id="application-code">\n'+source+'\n</script>');
 fs.writeFileSync(path.join(root,'index.html'),html,'utf8');

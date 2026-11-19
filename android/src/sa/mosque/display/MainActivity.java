@@ -92,7 +92,9 @@ public final class MainActivity extends Activity {
     private NetworkSpeedTest speed;
     private SetupTimetableFetcher setupFetcher;
     private UpdateManager updater;
-    private LocalPhoneServer phone;
+    private volatile LocalPhoneServer phone;
+    private TextView pairedSessionStatus;
+    private Thread qrWorker;
     private volatile boolean foreground;
     private int wakingKey = -1;
 
@@ -140,10 +142,16 @@ public final class MainActivity extends Activity {
             @Override public boolean canStartUpdate() { return foreground && !praying && !isFinishing() && !isDestroyed(); }
             @Override public void onUpdateState(JSONObject state) { publishNative("mosque-native-update-result", state); }
         });
-        phone = new LocalPhoneServer(this, new LocalPhoneServer.Host() {
+        phone = new LocalPhoneServer(new AndroidPhonePlatform(this), new LocalPhoneServer.Host() {
             @Override public void key(String key) { runOnUiThread(() -> phoneKey(key)); }
             @Override public void text(String text) { runOnUiThread(() -> phoneText(text)); }
             @Override public void confirmPhone(long session, String code) { confirmPhonePairing(session, code); }
+            @Override public void settings(long session, String id, boolean apply) { evaluatePhoneSettings(session, id, apply); }
+            @Override public void settingsSaved(long session) {
+                if (session == phoneDialogSession && pairedSessionStatus != null) {
+                    pairedSessionStatus.setText(ui("حُفظت إعدادات الجامع من الجوال", "Mosque settings saved from phone"));
+                }
+            }
             @Override public void pairingExpired(long session) {
                 if (phoneDialogSession == session && phoneDialog != null && phoneDialog.isShowing()) {
                     phoneDialog.dismiss();
@@ -278,7 +286,7 @@ public final class MainActivity extends Activity {
             lost.destroy();
             fileCallback = null; // The renderer that owned this callback has exited.
             dismissOperatorDialog();
-            if (phone != null) phone.stop();
+            closePhonePairing();
             long now = android.os.SystemClock.elapsedRealtime();
             if (now - lastRendererRecovery >= 60_000L) {
                 if (foreground) restoreDisplay(frame);
@@ -303,6 +311,7 @@ public final class MainActivity extends Activity {
         @Override public boolean shouldOverrideUrlLoading(WebView view, String url) { return !localIndex(url); }
         @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
             if (view != webView) return;
+            if (phoneDialog != null) closePhonePairing();
             mainFrameFailed = false;
             if (!localIndex(url)) { view.stopLoading(); showLoadError(); }
         }
@@ -429,6 +438,15 @@ public final class MainActivity extends Activity {
         @JavascriptInterface public void openSystemSettings() {
             runOnUiThread(() -> launchSystemSettings());
         }
+        @JavascriptInterface public boolean phoneSettingsActive(String id) {
+            return foreground && !praying && phone != null && phone.activeRequest(id);
+        }
+        @JavascriptInterface public String takePhoneSettingsRequest(String id) {
+            return foreground && !praying && phone != null ? phone.claimRequest(id) : null;
+        }
+        @JavascriptInterface public void finishPhoneSettingsRequest(String id, String result) {
+            if (phone != null) phone.finishRequest(id, result);
+        }
         @JavascriptInterface public void prayerState(boolean active) {
             praying = active; prayerActive = active;
             runOnUiThread(() -> {
@@ -436,7 +454,7 @@ public final class MainActivity extends Activity {
                 DeviceSetupActivity.setPrayerActive(active);
                 FeedbackActivity.setPrayerActive(active);
                 if (active) {
-                    if (phone != null) phone.stop();
+                    closePhonePairing();
                     dismissOperatorDialog();
                 }
                 if (active && speed != null) speed.cancel();
@@ -550,38 +568,135 @@ public final class MainActivity extends Activity {
     }
     private void showPhonePairing() {
         if (!operatorAllowed()) return;
-        try {
-            String link = phone.start();
-            final long session = phone.session();
-            QrCode code = QrCode.encodeText(link, QrCode.Ecc.MEDIUM);
-            int scale = 7, border = 4, side = (code.size + border * 2) * scale;
-            Bitmap bitmap = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888);
-            int[] pixels = new int[side * side];
-            for (int y = 0; y < side; y++) for (int x = 0; x < side; x++) pixels[y * side + x] = code.getModule(x / scale - border, y / scale - border) ? Color.BLACK : Color.WHITE;
-            bitmap.setPixels(pixels, 0, side, 0, 0, side, side);
-            LinearLayout view = new LinearLayout(this); view.setOrientation(LinearLayout.VERTICAL); view.setGravity(Gravity.CENTER); view.setPadding(24, 16, 24, 16);
-            ImageView qr = new ImageView(this); qr.setImageBitmap(bitmap); qr.setContentDescription(ui("رمز اقتران مؤقت بريموت الجوال", "Temporary phone remote pairing code"));
-            int dimension = (int)(260 * getResources().getDisplayMetrics().density);
-            view.addView(qr, new LinearLayout.LayoutParams(dimension, dimension));
-            TextView description = new TextView(this); description.setGravity(Gravity.CENTER); description.setTextSize(17);
-            description.setText(ui("استخدم شبكة المشرفين الخاصة وامسح الرمز خلال دقيقتين. طابق الرقم على الجهازين ثم وافق بريموت التلفاز.\nالاتصال غير مشفّر. تجنّب إدخال أي بيانات حساسة. الجلسة 15 دقيقة.\n",
-                    "Use a private staff network. Scan within two minutes, match the numbers and confirm with the TV remote.\nThe connection is unencrypted. Avoid sensitive text. The session lasts 15 minutes.\n")
-                    + link.substring(0, link.indexOf('#')));
-            view.addView(description);
-            showPhoneDialog(session, new AlertDialog.Builder(this).setTitle(ui("التحكم من الجوال", "Phone remote")).setView(view)
-                    .setOnCancelListener(dialog -> phone.stop(session))
-                    .setNegativeButton(ui("إيقاف الاقتران", "Stop pairing"), (dialog, which) -> phone.stop(session)).create());
-        } catch (Exception error) {
-            phone.stop();
-            publishNotice(ui("تعذر بدء اقتران الجوال. صِل الجهازين بشبكة محلية واحدة؛ لا يلزم إنترنت.", "Phone pairing could not be started. Connect both devices to the same local network; no internet is needed."));
+        closePhonePairing();
+        final long session = phone.reserve();
+        LinearLayout view = new LinearLayout(this);
+        view.setOrientation(LinearLayout.VERTICAL); view.setGravity(Gravity.CENTER); view.setPadding(24, 16, 24, 16);
+        ImageView qr = new ImageView(this);
+        qr.setContentDescription(ui("رمز اقتران مؤقت بالجوال", "Temporary phone pairing code"));
+        int dimension = (int)(260 * getResources().getDisplayMetrics().density);
+        view.addView(qr, new LinearLayout.LayoutParams(dimension, dimension));
+        TextView description = new TextView(this);
+        description.setGravity(Gravity.CENTER); description.setTextSize(17);
+        description.setText(ui("جارٍ فتح الاقتران…", "Opening pairing…"));
+        view.addView(description);
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle(ui("التحكم من الجوال", "Phone controls")).setView(view)
+                .setOnCancelListener(unused -> phone.stop(session))
+                .setNegativeButton(ui("إيقاف الاقتران", "Stop pairing"), (unused, which) -> phone.stop(session)).create();
+        showPhoneDialog(session, dialog);
+        if (!dialog.isShowing()) { closePhonePairing(); return; }
+        // The dialog already owns this generation. A close while looking up the LAN
+        // address invalidates it before a listener can be created by the worker.
+        qrWorker = new Thread(() -> {
+            try {
+                String link = phone.startReserved(session, LocalPhoneServer.localAddress());
+                if (!phone.current(session)) return;
+                Bitmap bitmap = phoneQrBitmap(link);
+                runOnUiThread(() -> {
+                    if (phoneDialog != dialog || !phone.current(session)) return;
+                    qr.setImageBitmap(bitmap);
+                    description.setText(ui("امسح الرمز خلال دقيقتين على شبكة المشرفين الخاصة، وطابق الرقم على الجهازين ثم وافق بريموت التلفزيون. الاتصال محلي غير مشفّر. تنتهي الجلسة بعد 15 دقيقة.\n",
+                            "Scan on the private staff network within two minutes, match the numbers, then approve on the TV. The local connection is unencrypted. Pairing ends after 15 minutes.\n")
+                            + link.substring(0, link.indexOf('#')));
+                    qrWorker = null;
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    if (phoneDialog != dialog || phoneDialogSession != session) return;
+                    closePhonePairing();
+                    publishNotice(ui("تعذر بدء الاقتران. صِل التلفزيون والجوال بشبكة محلية واحدة.", "Pairing could not start. Connect the TV and phone to the same local network."));
+                });
+            }
+        }, "mosque-pairing-qr");
+        qrWorker.setDaemon(true);
+        qrWorker.start();
+    }
+
+    private static Bitmap phoneQrBitmap(String link) {
+        QrCode code = QrCode.encodeText(link, QrCode.Ecc.MEDIUM);
+        int scale = 7, border = 4, side = (code.size + border * 2) * scale;
+        int[] pixels = new int[side * side];
+        for (int y = 0; y < side; y++) {
+            if (Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException();
+            for (int x = 0; x < side; x++) pixels[y * side + x] = code.getModule(x / scale - border, y / scale - border) ? Color.BLACK : Color.WHITE;
         }
+        Bitmap bitmap = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888);
+        bitmap.setPixels(pixels, 0, side, 0, 0, side, side);
+        return bitmap;
     }
     private void showPhoneDialog(long session, AlertDialog dialog) {
+        // Detach the old step before dismissing it; its OnDismiss may be delivered later.
+        AlertDialog previous = phoneDialog;
+        phoneDialog = null;
+        if (previous != null) previous.dismiss();
         dismissOperatorDialog();
         phoneDialogSession = session;
         phoneDialog = dialog;
         showOperatorDialog(dialog);
     }
+
+    private void closePhonePairing() {
+        if (phone != null) phone.stop();
+        if (qrWorker != null) { qrWorker.interrupt(); qrWorker = null; }
+        AlertDialog previous = phoneDialog;
+        phoneDialog = null;
+        pairedSessionStatus = null;
+        if (operatorDialog == previous) operatorDialog = null;
+        if (previous != null) previous.dismiss();
+    }
+
+    private void showPairedSession(long session) {
+        // Keep a visible, dismissible session for its entire lifetime without taking focus
+        // from the display. Physical Back (or touching the chip) stops the server.
+        AlertDialog previous = phoneDialog;
+        phoneDialog = null;
+        if (operatorDialog == previous) operatorDialog = null;
+        if (previous != null) previous.dismiss();
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(16, 6, 16, 6);
+        TextView status = new TextView(this);
+        status.setText(ui("جوال المشرف متصل", "Operator phone paired"));
+        TextView help = new TextView(this);
+        help.setText(ui("إيقاف الاقتران: رجوع بريموت التلفزيون", "TV remote Back to stop pairing"));
+        panel.addView(status); panel.addView(help);
+        AlertDialog connected = new AlertDialog.Builder(this).setView(panel).create();
+        connected.setCanceledOnTouchOutside(false);
+        connected.setOnDismissListener(unused -> {
+            if (phoneDialog == connected) closePhonePairing();
+        });
+        android.view.Window window = connected.getWindow();
+        if (window != null) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL);
+            window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            window.setGravity(Gravity.BOTTOM | Gravity.END);
+        }
+        phoneDialogSession = session;
+        phoneDialog = connected;
+        pairedSessionStatus = status;
+        panel.setOnClickListener(unused -> connected.dismiss());
+        connected.show();
+        if (window != null) window.setLayout(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT);
+    }
+
+    private void evaluatePhoneSettings(long session, String id, boolean apply) {
+        if (session != phoneDialogSession || pairedSessionStatus == null || !operatorAllowed() || mainFrameFailed) {
+            phone.finishRequest(id, "{\"ok\":false,\"error\":\"unavailable\"}");
+            return;
+        }
+        // Only a native UUID is inserted in program text. The JSON is pulled once as data
+        // on the renderer's bridge thread, alongside a revocation check at application time.
+        String action = apply ? "api.apply(JSON.parse(raw),active)" : "api.state()";
+        String script = "(function(id){var bridge=window.MosqueAndroid;"
+                + "function active(){return bridge.phoneSettingsActive(id)}"
+                + "function done(v){bridge.finishPhoneSettingsRequest(id,JSON.stringify(v))}"
+                + "function failed(){done({ok:false,error:'unavailable'})}"
+                + "try{var raw=bridge.takePhoneSettingsRequest(id);if(raw==null)return;"
+                + "var api=window.MosquePhoneSettings;if(!api){failed();return;}"
+                + "Promise.resolve(" + action + ").then(done,failed)}catch(e){failed()}})(" + JSONObject.quote(id) + ")";
+        webView.evaluateJavascript(script, null);
+    }
+
     private void confirmPhonePairing(long session, String code) {
         if (!phone.waiting(session)) return;
         if (!operatorAllowed() || operatorDialog == null || operatorDialog != phoneDialog || phoneDialogSession != session) {
@@ -595,6 +710,7 @@ public final class MainActivity extends Activity {
                 .setNegativeButton(ui("رفض", "Reject"), (unused, which) -> phone.stop(session))
                 .setPositiveButton(ui("الرقم مطابق", "Numbers match"), (unused, which) -> {
                     if (operatorAllowed() && phone.approve(session)) {
+                        showPairedSession(session);
                         publishNotice(ui("تم اقتران جوال المشرف.", "Operator phone paired."));
                     } else phone.stop(session);
                 }).create();
@@ -605,7 +721,7 @@ public final class MainActivity extends Activity {
         if (!foreground || praying || webView == null) return;
         if (power != null && power.isBlack()) { power.operator(); if ("menu".equals(key) || "ok".equals(key)) openControls(); return; }
         dismissOperatorDialog(); if (power != null) power.operator();
-        if ("back".equals(key)) { onBackPressed(); return; }
+        if ("back".equals(key)) { displayBack(); return; }
         if ("menu".equals(key)) { injectShortcut(false); return; }
         String name;
         switch (key) { case "up": name = "ArrowUp"; break; case "down": name = "ArrowDown"; break;
@@ -775,7 +891,7 @@ public final class MainActivity extends Activity {
         operatorDialog = dialog;
         dialog.setOnDismissListener(unused -> {
             if (operatorDialog == dialog) operatorDialog = null;
-            if (phoneDialog == dialog) phoneDialog = null;
+            if (phoneDialog == dialog) closePhonePairing();
         });
         dialog.show();
         if (dialog.getWindow() != null) dialog.getWindow().getDecorView().setLayoutDirection(
@@ -788,6 +904,11 @@ public final class MainActivity extends Activity {
     }
 
     @Override public void onBackPressed() {
+        if (phoneDialog != null) { closePhonePairing(); return; }
+        displayBack();
+    }
+
+    private void displayBack() {
         if (webView == null) { super.onBackPressed(); return; }
         if (praying) return;
         webView.evaluateJavascript("(function(){if(document.body&&document.body.classList.contains('praying'))return 'prayer';"
@@ -815,6 +936,10 @@ public final class MainActivity extends Activity {
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         int key = event.getKeyCode();
+        if (key == KeyEvent.KEYCODE_BACK && pairedSessionStatus != null) {
+            if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()) closePhonePairing();
+            return true;
+        }
         if (wakingKey == key) {
             if (event.getAction() == KeyEvent.ACTION_UP) wakingKey = -1;
             return true;
@@ -922,7 +1047,7 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onPause() {
         foreground = false;
-        if (phone != null) phone.stop();
+        closePhonePairing();
         wakingKey = -1;
         menuDown = false; handler.removeCallbacks(menuLongPress); dismissOperatorDialog();
         if (speed != null) speed.cancel();
@@ -943,7 +1068,7 @@ public final class MainActivity extends Activity {
         if (speed != null) speed.destroy();
         if (setupFetcher != null) setupFetcher.destroy();
         if (updater != null) updater.destroy();
-        if (phone != null) phone.stop();
+        closePhonePairing();
         handler.removeCallbacks(menuLongPress); dismissOperatorDialog();
         if (fileCallback != null) { fileCallback.onReceiveValue(null); fileCallback = null; }
         if (webView != null) {

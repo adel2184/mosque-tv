@@ -44,8 +44,15 @@ try {
   if ([System.Text.Encoding]::ASCII.GetString($dex,0,4) -ne "dex`n") { throw 'Invalid DEX header.' }
   if (-not [System.Text.Encoding]::ASCII.GetString($dex).Contains('https://mosque-tv-reports-adel2184.netlify.app/api/reports')) { throw 'Report receiver differs from the owner-selected service.' }
   $packedHtml = [System.Text.Encoding]::UTF8.GetString((Read-ApkBytes 'assets/web/index.html'))
-  if ((Byte-Hash (Read-ApkBytes 'assets/phone.html')) -ne (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'phone.html') -Algorithm SHA256).Hash.ToLowerInvariant()) {
+  $phonePage = Read-ApkBytes 'assets/phone.html'
+  $phonePageHash = Byte-Hash $phonePage
+  if ($phonePageHash -ne (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'phone.html') -Algorithm SHA256).Hash.ToLowerInvariant()) {
     throw 'Phone control page differs from its tested source.'
+  }
+  $phoneHtml = [System.Text.Encoding]::UTF8.GetString($phonePage)
+  $dexStrings = [System.Text.Encoding]::ASCII.GetString($dex)
+  foreach ($route in @('/api/pairing/state','/api/pairing/apply-settings')) {
+    if (-not $phoneHtml.Contains($route) -or -not $dexStrings.Contains($route)) { throw "Missing paired settings route in APK: $route" }
   }
   $policy = [regex]::Match($packedHtml, '<head>\s*<meta http-equiv="Content-Security-Policy" content="([^"]+)">').Groups[1].Value
   $scriptPolicy = [regex]::Match($policy, "(?:^|;\s*)script-src ([^;]+)").Groups[1].Value
@@ -103,7 +110,7 @@ try {
     verifiedAt = [DateTime]::UtcNow.ToString('o'); apkSHA256 = $apkHash; apkBytes = (Get-Item -LiteralPath $apkPath).Length
     entryCount = $names.Count; minSdk = $build.minSdk; targetSdk = $build.targetSdk; versionName = $versionName; versionCode = $versionCode; tvLauncher = $true; homeCandidate = $true
     requestedPermissions = $permissions; updateRepository = 'adel2184/mosque-tv'; signatureV2 = $true; signatureV3 = $true; originalSigningIdentity = $true; coreScriptUnchanged = $true; tvBridgeMatchesSource = $true
-    packagedScriptHashes = $expectedSources.Count - 1; phonePageMatchesSource = $true; postPrayerCards = $packagedGuide.postPrayer.Count
+    packagedScriptHashes = $expectedSources.Count - 1; phonePageMatchesSource = $true; phonePageSHA256 = $phonePageHash; phonePageBytes = $phonePage.Length; pairedSettingsRoutes = 2; postPrayerCards = $packagedGuide.postPrayer.Count
     embeddedJsonBlocks = $jsonCount; prayerRecords = 732; adhkar = $enabled.Count; originalQrSHA256 = $qrHash
     locationCatalogSHA256 = $catalogHash; setupCalendarStart = $setupCalendar.rangeStart; setupCalendarEnd = $setupCalendar.rangeEnd; setupCalendarMonthStarts = $setupCalendar.months.Count
     communityProfiles = $deviceProfiles.profiles.Count; communityProfilesSHA256 = $deviceProfilesHash; localReportAssetsMatch = $true; reportReceiver = 'https://mosque-tv-reports-adel2184.netlify.app/api/reports'

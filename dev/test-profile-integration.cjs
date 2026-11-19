@@ -16,7 +16,8 @@ function test(name,fn){try{fn();checks.push({name,pass:true});}catch(error){chec
 const embeddedFiles={'config-data':'dev/config.json','calendar-data':'data/calendar.json','setup-calendar-data':'data/setup-calendar.json','calendar-fixtures':'data/calendar-fixtures.json','prayer-data':'data/timetable.json','slides-data':'dev/slides.json','display-content-data':'dev/display-content.json'};
 const embedded=Object.entries(embeddedFiles).map(([id,file])=>'<script id="'+id+'" type="application/json">'+fs.readFileSync(path.join(root,file),'utf8')+'</script>').join('\n');
 const contextSource=fs.readFileSync(path.join(__dirname,'prayer-context.js'),'utf8');
-const actualHTML=fs.readFileSync(path.join(__dirname,'shell.html'),'utf8').replace('<!--EMBEDDED_DATA-->',()=>embedded).replace('<!--APPLICATION_SCRIPT-->',()=>'<script>'+contextSource+'\n'+appSource+'</script>');
+const phoneSchemaSource=fs.readFileSync(path.join(__dirname,'phone-settings.js'),'utf8');
+const actualHTML=fs.readFileSync(path.join(__dirname,'shell.html'),'utf8').replace('<!--EMBEDDED_DATA-->',()=>embedded).replace('<!--APPLICATION_SCRIPT-->',()=>'<script>'+contextSource+'\n'+phoneSchemaSource+'\n'+appSource+'</script>');
 const originalHarness=fs.readFileSync(path.join(__dirname,'test-content.cjs'),'utf8'),boundary=originalHarness.indexOf('\nconst base=createRuntime();');assert(boundary>0,'Existing full-app runtime factory was not found');
 let prefix=originalHarness.slice(0,boundary).replace("const html=fs.readFileSync(filename,'utf8');",'const html=CORE_HTML;')
   .replace("function createRuntime(boot=stamp('2026-11-16T09:15:00')){","function createRuntime(boot=stamp('2026-11-16T09:15:00')){const options=RUNTIME_OPTIONS;")
@@ -32,6 +33,8 @@ const tableCache=new Map();function table(profile){const key=JSON.stringify(prof
 const providerHarness=fs.readFileSync(path.join(__dirname,'test-setup-provider.cjs'),'utf8'),providerBoundary=providerHarness.indexOf('\nconst p=profile()');assert(providerBoundary>0,'Existing provider fixture generator was not found');
 const providerContext={require,__dirname,console};vm.runInNewContext(providerHarness.slice(0,providerBoundary)+'\nthis.makePayload=payloadFor;',providerContext,{timeout:5000});
 const defaults=JSON.parse(fs.readFileSync(path.join(__dirname,'config.json'),'utf8')),legacyTable=fs.readFileSync(path.join(root,'data/timetable.json'),'utf8');
+module.exports={runtime,cityProfile,table,defaults,legacyTable,INSTALL,OLD_SETTINGS,OLD_TABLE};
+if(require.main===module){
 test('An existing legacy installation keeps both original keys and all saved values without forcing setup or rewriting on boot',()=>{
   const settings=clone(defaults);settings.iqama.offsets.fajr=26;settings.mosque.fields.name.value='Existing Mosque';
   delete settings.adhanAdjustments;delete settings.silentPhoneReminder;delete settings.postPrayerMinutes;
@@ -145,3 +148,4 @@ test('Umm al-Qura actual Isha intervals must match the local Ramadan date even w
   const country=catalog.countries.find(item=>item.id==='SA'),city=country.cities.find(item=>item.id==='110336'),p={...cairo,countryId:'SA',cityId:city.id,latitude:city.latitude,longitude:city.longitude,timezone:city.timezone,methodId:'UmmAlQura'},raw=table(p),row=raw.records.find(item=>item.date==='2026-02-18');row.instants.isha+=30*60000;const parts=engine.wallParts(row.instants.isha,p.timezone);row.isha=String(parts.hour).padStart(2,'0')+':'+String(parts.minute).padStart(2,'0');const app=runtime();rejects(()=>app.window.MosqueInstall.validatePrepared(p,raw));eq(app.writes.length,0);eq(app.window.MosqueInstall.getContext().profile,null);
 });
 const report={executedAt:new Date().toISOString(),appSHA256:crypto.createHash('sha256').update(appSource).digest('hex'),method:'Actual dev/app.js and shell/data are evaluated in the existing full-application minimal DOM factory, preloaded with the actual engine, atomic store, full local calendar and GeoNames catalog. Provider compatibility uses its actual parser and the existing generated full-coverage fixture builder, not live downloaded coverage. Storage failures are atomic fakes. The core production MosqueInstall API is exercised; clock injection is test-mode only. No browser, Android/TV, visual layout, network source fetch, physical update, or real storage-quota test executed.',passed:checks.filter(item=>item.pass).length,total:checks.length,failed:checks.filter(item=>!item.pass).length,checks};console.log(JSON.stringify(report,null,2));if(report.failed)process.exitCode=1;
+}

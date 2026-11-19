@@ -53,7 +53,7 @@
   try{if(context().profile)window.MosqueAndroid?.setProfileTimezone?.(context().profile.timezone);}catch(_){}
   window.MosqueProfile={
     catalog:()=>context().catalog,
-    load:()=>context().profile?{...context().profile,mosqueName:context().settings.mosque.fields.name.value}:{language:'ar',countryId:sa?.id||countries[0]?.id||'',cityId:dammam?.id||'',latitude:dammam?.latitude,longitude:dammam?.longitude,timezone:dammam?.timezone||'Asia/Riyadh',hourFormat:12,dateStyle:'both',methodId:'UmmAlQura',neighborhood:'',mosqueName:context().required?'':context().settings.mosque.fields.name.value},
+    load:()=>context().profile?{...context().profile,mosqueName:context().settings.mosque.fields.name.value}:{language:'ar',countryId:sa?.id||countries[0]?.id||'',cityId:dammam?.id||'',latitude:dammam?.latitude,longitude:dammam?.longitude,timezone:dammam?.timezone||'Asia/Riyadh',hourFormat:12,dateStyle:'both',methodId:'UmmAlQura',neighborhood:'',...context().settings?.displayPreferences,mosqueName:context().required?'':context().settings.mosque.fields.name.value},
     prepare:async profile=>{try{return await calculate(profile);}catch(error){return failure(error);}},
     importData:importFile,
     save:(profile,prepared)=>{try{if(!prepared||prepared.ok!==true||!prepared.table||prepared.profileKey!==JSON.stringify(engine.validateProfile(profile,context().catalog)))throw Error('The prepared data no longer matches these choices. Prepare it again.');return core.commit(profile,prepared.table);}catch(error){return failure(error);}},

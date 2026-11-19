@@ -59,7 +59,7 @@
   function coordinate(value,min,max,label){if(typeof value!=='number'||!Number.isFinite(value)||value<min||value>max)fail('INVALID_COORDINATE',label+' is outside the supported range.');return value;}
   function validateProfile(input,catalog){
     if(!input||typeof input!=='object'||Array.isArray(input))fail('INVALID_PROFILE','Location profile must be an object.');
-    if(!['ar','en'].includes(input.language)||![12,24].includes(input.hourFormat)||!['both','hijri','gregorian'].includes(input.dateStyle)||!Object.prototype.hasOwnProperty.call(PRESETS,input.methodId))fail('INVALID_PROFILE','Choose a supported language, clock, date style, and calculation method.');
+    if(!['ar','en'].includes(input.language)||![12,24].includes(input.hourFormat)||!['both','hijri','gregorian','none'].includes(input.dateStyle)||!Object.prototype.hasOwnProperty.call(PRESETS,input.methodId))fail('INVALID_PROFILE','Choose a supported language, clock, date style, and calculation method.');
     const countryId=text(input.countryId,2,'Country',true),cityId=text(input.cityId,80,'City',true);
     if(!/^[A-Z]{2}$/.test(countryId)||!/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/.test(cityId))fail('INVALID_CITY','Choose a valid country and city.');
     zoneFormatter(input.timezone);

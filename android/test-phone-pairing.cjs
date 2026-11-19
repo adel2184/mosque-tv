@@ -15,5 +15,8 @@ const out = path.join(__dirname, 'build', 'phone-tests');
 fs.mkdirSync(out, { recursive: true });
 const opts = { cwd: root, stdio: 'inherit', windowsHide: true };
 execFileSync(tool('javac'), ['-encoding', 'UTF-8', '-d', out,
-  'android/src/sa/mosque/display/PhoneApproval.java', 'android/tests/PhoneApprovalTest.java'], opts);
+  'android/src/sa/mosque/display/PhoneApproval.java', 'android/src/sa/mosque/display/LocalPhoneServer.java',
+  'android/tests/PhoneApprovalTest.java', 'android/tests/PhoneServerTest.java'], opts);
 execFileSync(tool('java'), ['-cp', out, 'sa.mosque.display.PhoneApprovalTest'], opts);
+
+execFileSync(tool('java'), ['-cp', out, 'sa.mosque.display.PhoneServerTest'], opts);

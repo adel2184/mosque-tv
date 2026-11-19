@@ -113,3 +113,17 @@
 
 /* The editor fills the dialog. Its initial focus should lay out only the editor. */
 .tv-editor { contain: strict; }
+
+/* The track animates inside a viewport with explicit width/height and clipping.
+   Its intrinsic width does not participate in the dashboard's outside layout. */
+#tickerViewport { contain: strict; }
+
+@media (prefers-reduced-motion: reduce) {
+  .static-announcements .ticker-cycle {
+    display: flex;
+    justify-content: center;
+    text-align: center;
+  }
+  .static-announcements .ticker-item { max-width: 100%; }
+  .static-announcements .ticker-item[hidden] { display: none; }
+}

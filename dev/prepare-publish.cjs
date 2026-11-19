@@ -12,7 +12,9 @@ for(const file of tracked.split('\0'))if(file&&!excluded.test(file)&&fs.existsSy
 const publicAdditions=['docs/DEVELOPMENT.md','docs/SETUP_EN.md','docs/PROJECT_NOTES_AR.md',
   'dev/capture-readme.cjs','dev/preview-file.cjs',
   'dev/prayer-context.js','dev/prayer-display.css','dev/test-prayer-context.cjs',
+  'dev/phone-settings.js','dev/test-phone-settings.cjs',
   'android/src/sa/mosque/display/PhoneApproval.java','android/tests/PhoneApprovalTest.java',
+  'android/src/sa/mosque/display/AndroidPhonePlatform.java','android/tests/PhoneServerTest.java',
   'android/test-phone-pairing.cjs','android/test-phone-client.cjs',
   ...['display-ar','display-en','prayer-mode','setup-ar','control-center-ar'].map(name=>'docs/images/'+name+'.webp')];
 for(const file of publicAdditions)if(fs.existsSync(path.join(root,file)))selected.add(file);
