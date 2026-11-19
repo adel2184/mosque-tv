@@ -14,6 +14,15 @@ const req=(body,headers={},method='POST')=>new Request('https://mosque-tv-report
 const fixture=()=>{const data=new Map();let opens=0,writes=0;return{data,get opens(){return opens;},get writes(){return writes;},openStore(){opens++;return{async setJSON(key,value,options){assert.equal(options.onlyIfNew,true);if(data.has(key))return{modified:false};writes++;data.set(key,value);return{modified:true};},async get(key,options){assert.equal(options.consistency,'strong');return data.get(key)||null;}};}};};
 async function test(name,fn){try{await fn();checks.push({name,pass:true});}catch(error){checks.push({name,pass:false,error:error.stack});}}
 
+await test('Standalone reports require a supplied app version and the offline CLI defaults to the release manifest',()=>{
+  const manifest=fs.readFileSync(new URL('../../../android/AndroidManifest.xml',import.meta.url),'utf8');
+  const config=JSON.parse(fs.readFileSync(new URL('../service-config.json',import.meta.url),'utf8'));
+  assert.equal(config.defaultAppVersion,manifest.match(/android:versionName="([^"]+)"/)[1]);
+  const html=fs.readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
+  const versionInput=html.match(/<input\b[^>]*\bid="appVersion"[^>]*>/)[0];
+  assert.doesNotMatch(versionInput,/\bvalue="[^"]+"/);assert.match(versionInput,/\brequired\b/);
+});
+
 await test('Sanitization removes IPv4, compressed/full IPv6, MAC, email, URL, Arabic phone and labelled tokens; repeated sanitization is stable',()=>{
   const raw='IPv4 192.168.1.100 IPv6 2001:db8::1 full 2001:db8:0:0:0:0:0:1 MAC aa:bb:cc:dd:ee:ff mail person@example.com URL https://example.com/a?token=secret phone ٠٥٥١٢٣٤٥٦٧ token=abcdef SSID="Private Network"\nauthorization: Bearer something';
   const clean=schema.sanitize(raw);for(const secret of ['192.168','2001:db8','aa:bb','person@','https://','0551234567','abcdef','Private Network','something'])assert.ok(!clean.includes(secret),secret);assert.equal(schema.sanitize(clean),clean);assert.ok(schema.sanitize('Clock 13:17:00').includes('13:17:00'));

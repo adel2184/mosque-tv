@@ -241,6 +241,12 @@ test('Every native shortcut delegates its allowlisted ID once and no shortcut ac
   for(const id of CATALOG.filter(id=>!['app','update','home','power'].includes(id))){const app=runtime({storage:new Map([[CENTER,pref([id],'cc-row-'+id)]])});const original=app.window.MosqueTVNative.controlAction;assert(typeof original==='function','Missing actual bridge controlAction');const actions=[];app.window.MosqueTVNative.controlAction=value=>{actions.push(value);return original(value);};app.open();app.click('cc-row-'+id);same(actions,[id]);eq(app.config().lastId,'cc-row-'+id);eq(app.center.isOpen(),true);eq(app.document.activeElement.id,'cc-row-'+id);app.prayer(true);app.open();eq(app.center.isOpen(),false);eq(actions.length,1);}
   for(const id of ['bluetooth','mirror','sleep','power']){const app=runtime();const original=app.window.MosqueTVNative.controlAction,actions=[];app.window.MosqueTVNative.controlAction=value=>{actions.push(value);return original(value);};app.open();app.click('cc-quick-'+id);same(actions,[id]);eq(app.center.isOpen(),id!=='power');}
 });
+test('Reopening and closing an unchanged control center does not write to flash again',()=>{
+  const app=runtime();app.open();app.center.close({immediate:true});
+  eq(app.writes.filter(item=>item.key===CENTER).length,1);
+  app.open();app.center.close({immediate:true});
+  eq(app.writes.filter(item=>item.key===CENTER).length,1);
+});
 test('The original gear and Menu keyboard handler launch the center, and the original Back button returns from settings to the remembered row',()=>{
   const app=runtime();app.get('settingsButton').focus();app.click('settingsButton');eq(app.center.isOpen(),true);eq(app.window.MosqueTV.isOpen(),false);app.menu();eq(app.center.isOpen(),false);eq(app.document.activeElement.id,'settingsButton');app.menu();eq(app.center.isOpen(),true);app.click('cc-row-app');eq(app.window.MosqueTV.isOpen(),true);eq(app.window.MosqueTV.getUIState().pane,'menu');app.click('tvSettingsBack');eq(app.window.MosqueTV.isOpen(),false);eq(app.center.isOpen(),true);eq(app.document.activeElement.id,'cc-row-app');app.back();eq(app.document.activeElement.id,'settingsButton');
 });

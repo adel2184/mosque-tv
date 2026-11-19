@@ -53,7 +53,8 @@ public final class PhoneServerTest {
                 String payload = server.claimRequest(id);
                 require(payload != null && server.claimRequest(id) == null);
                 if (hold) { pending.add(id); return; }
-                if (!apply) server.finishRequest(id, "{\"ok\":true,\"revision\":1}");
+                if (!apply) server.finishRequest(id, payload.equals("export")
+                        ? "{\"ok\":true,\"revision\":1,\"backup\":{}}" : "{\"ok\":true,\"revision\":1}");
                 else if (SAMPLE.equals(payload) && applied.get() == 0) {
                     captured = payload; applied.incrementAndGet();
                     server.finishRequest(id, "{\"ok\":true,\"revision\":2}");
@@ -121,7 +122,8 @@ public final class PhoneServerTest {
         expect(405, "GET", APPLY, token, CLIENT, null);
         expect(400, "POST", APPLY, token, CLIENT, "[]");
         expect(413, "POST", APPLY, token, CLIENT, "x".repeat(LocalPhoneServer.SETTINGS_BYTES + 1));
-        require(expect(200, "GET", STATE, token, CLIENT, null).contains("\"revision\":1"));
+        String editor = expect(200, "GET", STATE, token, CLIENT, null);
+        require(editor.contains("\"revision\":1") && !editor.contains("\"backup\""));
         require(expect(200, "POST", APPLY, token, CLIENT, SAMPLE).contains("\"revision\":2"));
         expect(409, "POST", APPLY, token, CLIENT, SAMPLE);
         expect(200, "POST", "/api/key", token, CLIENT, "{\"key\":\"up\"}");
@@ -129,6 +131,7 @@ public final class PhoneServerTest {
         main.submit(() -> {}).get();
         require(SAMPLE.equals(captured) && applied.get() == 1 && saved.get() == 1 && lastCommand.equals("up") && texts.get() == 1);
         time.addAndGet(1200);
+        require(expect(200, "GET", STATE + "?export=1", token, CLIENT, null).contains("\"backup\""));
 
         // Closing a visible session while the WebView is busy releases its worker and rejects late completions.
         hold = true;

@@ -23,8 +23,8 @@
 
 ## حساب الأذان أثناء التطوير
 
-- المكتبة: **Adhan JS 4.4.3** من Batoul Apps، برخصة MIT. النسخة الأصلية محفوظة في `dev/vendor/adhan/package/`، وحزمة الإصدار في `dev/vendor/adhan-4.4.3.tgz`، والرخصة في `licenses/adhan-MIT.txt`.
-- [مستودع الإصدار](https://github.com/batoulapps/adhan-js/tree/v4.4.3)، [شرح المعاملات](https://github.com/batoulapps/adhan-js/blob/v4.4.3/METHODS.md)، [حزمة الإصدار الأصلية](https://registry.npmjs.org/adhan/-/adhan-4.4.3.tgz).
+- المكتبة: **Adhan JS 4.4.6** من Batoul Apps، برخصة MIT. حزمة المتصفح الأصلية محفوظة في `dev/vendor/adhan/adhan.umd.cjs`، والرخصة في `licenses/adhan-MIT.txt`.
+- [مستودع الإصدار](https://github.com/batoulapps/adhan-js/tree/v4.4.6)، [شرح المعاملات](https://github.com/batoulapps/adhan-js/blob/v4.4.6/METHODS.md)، [حزمة الإصدار الأصلية](https://registry.npmjs.org/adhan/-/adhan-4.4.6.tgz).
 - الإحداثيات التقريبية لوسط الدمام: `26.4207 N, 50.0888 E`. ليست إحداثيات مساحية لموقع الجامع. يمكن تعديلها في أمر المولّد؛ لا يعيد المتصفح حساب المواقيت عند التشغيل.
 - طريقة `UmmAlQura`: زاوية الفجر **18.5°**، والعصر بعامل ظل **1** (`Shafi` في المكتبة).
 - العشاء **90 دقيقة** بعد المغرب خارج رمضان، و**120 دقيقة** في تواريخ رمضان المدنية وفق جدول أم القرى المرفق. يغيّر المولد `ishaInterval` إلى 120 مرة واحدة؛ لا يضيف تعديلًا آخر قدره 30 دقيقة.
@@ -38,9 +38,9 @@
 
 ## التقويم الهجري: جدول أم القرى
 
-المصدر هو جدول `MONTH_STARTS` في **HijriDate 2.3.0** للدكتور محمد الشهري، برخصة MIT. النسخة الأصلية محفوظة في `dev/vendor/hijridate/ummalqura.py`، والرخصة في `licenses/hijridate-MIT.txt`.
+المصدر هو جدول `MONTH_STARTS` في **HijriDate 2.6.0** للدكتور محمد الشهري، برخصة MIT. جدول المصدر الأصلي محفوظ في `dev/vendor/hijridate/ummalqura.py`، والرخصة في `licenses/hijridate-MIT.txt`.
 
-- [المصدر المثبّت للإصدار](https://github.com/dralshehri/hijridate/blob/v2.3.0/src/hijridate/ummalqura.py).
+- [المصدر المثبّت للإصدار](https://github.com/dralshehri/hijridate/blob/v2.6.0/src/hijridate/ummalqura.py).
 - [توثيق مصادر التحقق لدى مؤلف المكتبة](https://hijridate.readthedocs.io/en/stable/background.html): يوضح الاعتماد على إصدارات أم القرى الأصلية، وكتاب تقويم أم القرى المقارن للسنوات 1412–1450هـ التي تشمل أعوام هذا التطبيق، وبيانات KACST للفترة التالية.
 - نطاق المصدر الكامل 1924-08-01 إلى 2077-11-16، لكن **الجدول المضمن في التطبيق محدود من 2025-12-21 إلى 2028-01-27**، مع بداية الشهر التالي `2028-01-28` كسجل نهاية حارس. يغطي جميع تواريخ المواقيت المدعومة وحدودها.
 - يحتوي `data/calendar.json` بدايات الأشهر الميلادية مع السنة والشهر الهجريين، وبصمة SHA-256 لملف المصدر. التحويل طرح أيام من بداية شهر معلومة، وليس تقريبًا هجريًا حسابيًا.

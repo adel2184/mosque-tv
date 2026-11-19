@@ -65,7 +65,7 @@ summary{font-size:1.03rem;font-weight:650;cursor:pointer;min-height:34px}details
 </main>
 <script>
 'use strict';
-const token = location.hash.slice(1);
+let token = location.hash.slice(1);
 history.replaceState(null, '', location.pathname);
 const $ = id => document.getElementById(id);
 const prayers = ['fajr','dhuhr','asr','maghrib','isha'];
@@ -98,7 +98,7 @@ const words = {
   saved:['حُفظت الإعدادات وطُبّقت على شاشة الجامع.','Settings saved and applied to the TV.'],
   imported:['حُمّلت النسخة على الهاتف. راجعها ثم اضغط حفظ وتطبيق على الشاشة.','Backup loaded on the phone. Review it, then tap Save & Apply to TV.'],
   invalid:['راجع القيم المحددة. قد يحتوي أحد الحقول على نص غير صالح أو طويل.','Check the highlighted fields. One or more entries may contain invalid or overly long text.'],
-  invalidBackup:['ملف غير صالح. اختر نسخة JSON من إعدادات الجامع بحجم 96 كيلوبايت أو أقل.','Invalid backup. Select a Mosque TV settings JSON file of 96 KiB or less.'],
+  invalidBackup:['ملف غير صالح. اختر نسخة JSON من إعدادات الجامع بحجم 128 كيلوبايت أو أقل.','Invalid backup. Select a Mosque TV settings JSON file of 128 KiB or less.'],
   scheduleError:['تتعارض المواعيد مع جدول الشاشة. راجع التواريخ وترتيب الأذان والإقامة.','These times conflict with the TV timetable. Check the dates and the order of adhan and iqama.'],
   duplicate:['يوجد تعديل آخر للصلاة نفسها في هذا التاريخ.','This prayer already has an override on that date.'],
   conflict:['تغيّرت إعدادات الشاشة. مسودتك محفوظة هنا. أعد تحميل الإعدادات قبل الحفظ.','The TV settings changed. Your draft is still here. Reload the TV settings before saving.'],
@@ -110,6 +110,7 @@ const words = {
 let language = /^en\b/i.test(navigator.language || '') ? 'en' : 'ar';
 const t = key => words[key][language === 'en' ? 1 : 0];
 let client = '', approved = false, commandSequence = 0;
+let expiryTimer = null;
 let snapshot = null, importedBackup = null, pending = false, dirty = false, stale = false;
 let connectionKey = 'checking', formKey = '', formError = false;
 // Restore carries both the full backup and the phone's reviewed edits.
@@ -138,9 +139,13 @@ function syncControls() {
   $('reload').hidden=pending || !approved || (!stale && (Boolean(snapshot) || !formError));
 }
 function finishPairing(key) {
-  approved=false; ++commandSequence;
+  approved=false; ++commandSequence; token=''; client='';
+  clearTimeout(expiryTimer); expiryTimer=null;
+  snapshot=null; importedBackup=null; dirty=false; stale=false;
+  $('announcements').replaceChildren(); $('overrides').replaceChildren();
+  document.querySelectorAll('input,select,textarea').forEach(node=>{node.value='';node.checked=false;});
   $('code').textContent=''; $('code').hidden=true;
-  connection(key); syncControls();
+  tab(false); connection(key); syncControls();
 }
 async function request(route,body,timeout,receive) {
   const controller=new AbortController();
@@ -155,10 +160,15 @@ async function request(route,body,timeout,receive) {
 }
 async function pair() {
   const until=performance.now()+60000;
-  while(performance.now()<until) {
+  while(token && performance.now()<until) {
+    const requestedAt=performance.now();
     const {status,data}=await request('/api/status',null,Math.min(5000,until-performance.now()),async r=>({status:r.status,data:r.ok?await r.json():null}));
+    if(!token)return;
     if(performance.now()>=until) break;
-    if(status===200 && data?.connected===true) {
+    if(status===200 && data?.connected===true && Number.isInteger(data.expiresInMs) && data.expiresInMs<=900000) {
+      const remaining=data.expiresInMs-(performance.now()-requestedAt);
+      if(remaining<=0) {finishPairing('expired');return;}
+      expiryTimer=setTimeout(()=>finishPairing('expired'),remaining);
       $('code').textContent=''; $('code').hidden=true; approved=true;
       connection('connected'); syncControls(); return;
     }
@@ -336,13 +346,14 @@ function settingsFromBackup(backup,live) {
   if(validateEditor(settings,!live.mosqueName)) throw Error('backup');
   return settings;
 }
-function checkState(data) {
-  if(!data || data.ok!==true || !Number.isSafeInteger(data.revision) || data.revision<1 || validateEditor(data.settings,true) || !plain(data.backup) || data.backup.schemaVersion!==1) throw Error('state');
+function checkState(data,exportBackup=false) {
+  if(!data || data.ok!==true || !Number.isSafeInteger(data.revision) || data.revision<1 || validateEditor(data.settings,true)) throw Error('state');
+  if(exportBackup && (!plain(data.backup) || data.backup.schemaVersion!==1)) throw Error('backup');
 }
 function acceptState(data) {
   checkState(data);
   showSettings(data.settings); $('mosqueName').required=Boolean(data.settings.mosqueName);
-  snapshot=data; importedBackup=null; dirty=false; stale=false;
+  snapshot={revision:data.revision,settings:data.settings}; importedBackup=null; dirty=false; stale=false;
 }
 function apiError(status,code,isSave) {
   if(status===403) { finishPairing('expired'); message('expired',true); return; }
@@ -409,10 +420,10 @@ async function downloadBackup() {
   if(!approved || pending || !snapshot) return;
   pending=true; syncControls();
   try {
-    const {status,data}=await settingsRequest('/api/pairing/state',null,10000);
+    const {status,data}=await settingsRequest('/api/pairing/state?export=1',null,10000);
     if(!approved) return;
     if(status!==200 || !data?.ok) { apiError(status,data?.error,false); return; }
-    checkState(data);
+    checkState(data,true);
     if(data.revision!==snapshot.revision) {
       if(dirty) { stale=true; message('conflict',true); }
       else { acceptState(data); message(''); }
@@ -454,6 +465,7 @@ $('add-override').addEventListener('click',()=>{
 });
 $('reload').addEventListener('click',()=>{if(!dirty || confirm(t('discard')))loadSettings();});
 $('download').addEventListener('click',downloadBackup); $('backupFile').addEventListener('change',importBackup);
+addEventListener('pagehide',()=>finishPairing('expired'),{once:true});
 translate(); syncControls();
 try {
   if(!/^[0-9a-f]{48}$/.test(token)) throw Error('Invalid QR');

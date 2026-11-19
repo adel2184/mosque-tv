@@ -40,16 +40,19 @@ final class LocalPhoneServer {
     private String token = "", authority = "", address = "";
     private volatile boolean running;
     private volatile long sessionGeneration;
+    // Unique across the short-lived server owners, including callbacks posted before close.
+    private static final java.util.concurrent.atomic.AtomicLong generations = new java.util.concurrent.atomic.AtomicLong();
     private final java.util.Set<Socket> sockets = java.util.concurrent.ConcurrentHashMap.newKeySet();
     // At most one active WebView transaction across all workers, scoped to the approved session.
     private static final class SettingsRequest {
         final String id = java.util.UUID.randomUUID().toString();
         final long session, deadline;
         final String payload;
+        final boolean exportBackup;
         final CompletableFuture<String> result = new CompletableFuture<>();
         boolean claimed;
-        SettingsRequest(long session, long deadline, String payload) {
-            this.session = session; this.deadline = deadline; this.payload = payload;
+        SettingsRequest(long session, long deadline, String payload, boolean exportBackup) {
+            this.session = session; this.deadline = deadline; this.payload = payload; this.exportBackup = exportBackup;
         }
     }
     private SettingsRequest inFlight;
@@ -113,6 +116,12 @@ final class LocalPhoneServer {
     private synchronized boolean authorized(long session, String clientId, String peer) {
         return current(session) && approval.authorized(clientId, peer);
     }
+    private synchronized boolean authenticationAllowed(long session, String peer) {
+        return current(session) && approval.authenticationAllowed(peer, platform.now());
+    }
+    private synchronized void authenticationFailed(long session, String peer) {
+        if (current(session)) approval.authenticationFailed(peer, platform.now());
+    }
     private synchronized String phoneStatus(long session, String clientId, String peer) {
         if (!current(session)) return null;
         if (approval.request(clientId, peer, platform.now())) {
@@ -166,19 +175,24 @@ final class LocalPhoneServer {
                 servePage(out);
                 return;
             }
-            if (!MessageDigest.isEqual(token.getBytes(StandardCharsets.US_ASCII), auth.getBytes(StandardCharsets.US_ASCII))) { reply(out, 403, "application/json", "{\"error\":\"انتهت جلسة الاقتران أو الرمز غير صحيح\"}".getBytes(StandardCharsets.UTF_8)); return; }
             String peer = client.getInetAddress().getHostAddress();
+            if (!authenticationAllowed(session, peer)) { replyError(out, 429, "busy"); return; }
+            if (!MessageDigest.isEqual(token.getBytes(StandardCharsets.US_ASCII), auth.getBytes(StandardCharsets.US_ASCII))) {
+                authenticationFailed(session, peer); replyError(out, 403, "expired"); return;
+            }
             if ("GET".equals(first[0]) && "/api/status".equals(route)) {
                 String challenge = phoneStatus(session, clientId, peer);
-                if (challenge == null) { reply(out, 403, "application/json", new byte[0]); return; }
+                if (challenge == null) { authenticationFailed(session, peer); replyError(out, 403, "expired"); return; }
                 boolean connected = challenge.isEmpty();
-                String body = connected ? "{\"connected\":true}" : "{\"pending\":true,\"code\":\"" + challenge + "\"}";
+                String body = connected ? "{\"connected\":true,\"expiresInMs\":" + Math.max(0L, expires - platform.now()) + "}"
+                        : "{\"pending\":true,\"code\":\"" + challenge + "\"}";
                 reply(out, connected ? 200 : 202, "application/json", body.getBytes(StandardCharsets.UTF_8));
                 return;
             }
-            if (!authorized(session, clientId, peer)) { reply(out, 403, "application/json", new byte[0]); return; }
+            if (!authorized(session, clientId, peer)) { authenticationFailed(session, peer); replyError(out, 403, "expired"); return; }
             boolean apply = "/api/pairing/apply-settings".equals(route);
-            boolean state = "/api/pairing/state".equals(route);
+            boolean exportBackup = "/api/pairing/state?export=1".equals(route);
+            boolean state = "/api/pairing/state".equals(route) || exportBackup;
             String field = "/api/key".equals(route) ? "key" : "/api/text".equals(route) ? "text" : null;
             if (!state && !apply && field == null) { replyError(out, 404, "route"); return; }
             if (!(state ? "GET" : "POST").equals(first[0])) { replyError(out, 405, "method"); return; }
@@ -188,7 +202,7 @@ final class LocalPhoneServer {
                 replyError(out, 400, "invalid"); return;
             }
             if (!allowCommand(session)) { replyError(out, 429, "busy"); return; }
-            if (state) { exchangeSettings(session, null, out); return; }
+            if (state) { exchangeSettings(session, null, exportBackup, out); return; }
             byte[] payload = new byte[size]; int read = 0;
             while (read < size) {
                 if (platform.now() > deadline) throw new IOException("deadline");
@@ -200,7 +214,7 @@ final class LocalPhoneServer {
             if (!authorized(session, clientId, peer)) { replyError(out, 403, "expired"); return; }
             if (apply) {
                 if (!platform.validSettings(json)) { replyError(out, 400, "invalid"); return; }
-                exchangeSettings(session, json, out); return;
+                exchangeSettings(session, json, false, out); return;
             }
             String value;
             try { value = platform.command(json, field); }
@@ -254,11 +268,11 @@ final class LocalPhoneServer {
         reply(out, status, "application/json", ("{\"ok\":false,\"error\":\"" + error + "\"}").getBytes(StandardCharsets.US_ASCII));
     }
 
-    private void exchangeSettings(long session, String payload, OutputStream out) throws IOException {
+    private void exchangeSettings(long session, String payload, boolean exportBackup, OutputStream out) throws IOException {
         SettingsRequest request;
         synchronized (this) {
             if (current(session) && inFlight == null) {
-                request = new SettingsRequest(session, platform.now() + REQUEST_MS, payload);
+                request = new SettingsRequest(session, platform.now() + REQUEST_MS, payload, exportBackup);
                 inFlight = request;
                 platform.post(() -> { if (activeRequest(request.id)) host.settings(session, request.id, payload != null); });
             } else request = null;
@@ -291,7 +305,8 @@ final class LocalPhoneServer {
     synchronized String claimRequest(String id) {
         if (!activeRequest(id) || inFlight.claimed) return null;
         inFlight.claimed = true;
-        return inFlight.payload == null ? "" : inFlight.payload;
+        if (inFlight.payload != null) return inFlight.payload;
+        return inFlight.exportBackup ? "export" : "";
     }
     synchronized void finishRequest(String id, String json) {
         if (activeRequest(id)) {
@@ -322,7 +337,7 @@ final class LocalPhoneServer {
         out.write(header.getBytes(StandardCharsets.US_ASCII)); out.write(body); out.flush();
     }
     synchronized void stop() {
-        running = false; sessionGeneration++; expires = 0; token = ""; address = ""; approval = null;
+        running = false; sessionGeneration = generations.incrementAndGet(); expires = 0; token = ""; address = ""; approval = null;
         platform.clearPending(); pendingCommands = 0;
         if (server != null) try { server.close(); } catch (IOException ignored) { }
         if (inFlight != null) { inFlight.result.cancel(false); inFlight = null; }

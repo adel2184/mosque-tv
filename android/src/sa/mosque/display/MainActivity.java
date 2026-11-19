@@ -113,8 +113,7 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-                | WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
         FrameLayout frame = new FrameLayout(this);
         frame.setBackgroundColor(Color.BLACK);
         webView = new WebView(this);
@@ -142,7 +141,13 @@ public final class MainActivity extends Activity {
             @Override public boolean canStartUpdate() { return foreground && !praying && !isFinishing() && !isDestroyed(); }
             @Override public void onUpdateState(JSONObject state) { publishNative("mosque-native-update-result", state); }
         });
-        phone = new LocalPhoneServer(new AndroidPhonePlatform(this), new LocalPhoneServer.Host() {
+        applyImmersive();
+        webView.loadUrl(HOME);
+        webView.requestFocus();
+    }
+
+    private LocalPhoneServer createPhoneServer() {
+        return new LocalPhoneServer(new AndroidPhonePlatform(this), new LocalPhoneServer.Host() {
             @Override public void key(String key) { runOnUiThread(() -> phoneKey(key)); }
             @Override public void text(String text) { runOnUiThread(() -> phoneText(text)); }
             @Override public void confirmPhone(long session, String code) { confirmPhonePairing(session, code); }
@@ -159,9 +164,6 @@ public final class MainActivity extends Activity {
                 }
             }
         });
-        applyImmersive();
-        webView.loadUrl(HOME);
-        webView.requestFocus();
     }
 
     @SuppressLint({"SetJavaScriptEnabled", "JavascriptInterface"})
@@ -333,7 +335,7 @@ public final class MainActivity extends Activity {
     private final class LocalChrome extends WebChromeClient {
         @Override public void onPermissionRequest(PermissionRequest request) { request.deny(); }
         @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
-            if (praying || !localIndex(view.getUrl()) || fileCallback != null || exportBusy
+            if (!operatorAllowed() || view != webView
                     || params.getMode() != FileChooserParams.MODE_OPEN) {
                 callback.onReceiveValue(null);
                 publishNotice(ui("أكمل العملية الحالية أولًا، ثم اختر ملف JSON واحدًا.", "Finish the current operation first, then select one JSON file."));
@@ -439,13 +441,16 @@ public final class MainActivity extends Activity {
             runOnUiThread(() -> launchSystemSettings());
         }
         @JavascriptInterface public boolean phoneSettingsActive(String id) {
-            return foreground && !praying && phone != null && phone.activeRequest(id);
+            LocalPhoneServer active = phone;
+            return foreground && !praying && active != null && active.activeRequest(id);
         }
         @JavascriptInterface public String takePhoneSettingsRequest(String id) {
-            return foreground && !praying && phone != null ? phone.claimRequest(id) : null;
+            LocalPhoneServer active = phone;
+            return foreground && !praying && active != null ? active.claimRequest(id) : null;
         }
         @JavascriptInterface public void finishPhoneSettingsRequest(String id, String result) {
-            if (phone != null) phone.finishRequest(id, result);
+            LocalPhoneServer active = phone;
+            if (active != null) active.finishRequest(id, result);
         }
         @JavascriptInterface public void prayerState(boolean active) {
             praying = active; prayerActive = active;
@@ -469,7 +474,7 @@ public final class MainActivity extends Activity {
             }
             final String safeName = safeFilename(filename);
             runOnUiThread(() -> {
-                if (isFinishing() || isDestroyed() || webView == null || !localIndex(webView.getUrl())) return;
+                if (!foreground || mainFrameFailed || isFinishing() || isDestroyed() || webView == null || !localIndex(webView.getUrl())) return;
                 if (exportBusy || fileCallback != null) {
                     publishExportResult(false, false, ui("توجد عملية ملفات قيد التنفيذ؛ أكملها أولًا.", "Finish the current file operation first."));
                     return;
@@ -560,7 +565,7 @@ public final class MainActivity extends Activity {
 
     private boolean operatorAllowed() {
         return foreground && !praying && !isFinishing() && !isDestroyed() && webView != null
-                && localIndex(webView.getUrl()) && !exportBusy && fileCallback == null && !homeRolePending;
+                && !mainFrameFailed && localIndex(webView.getUrl()) && !exportBusy && fileCallback == null && !homeRolePending;
     }
     private void publishNative(String event, JSONObject value) {
         if (webView == null || isFinishing() || isDestroyed()) return;
@@ -569,7 +574,9 @@ public final class MainActivity extends Activity {
     private void showPhonePairing() {
         if (!operatorAllowed()) return;
         closePhonePairing();
-        final long session = phone.reserve();
+        final LocalPhoneServer owner = createPhoneServer();
+        phone = owner;
+        final long session = owner.reserve();
         LinearLayout view = new LinearLayout(this);
         view.setOrientation(LinearLayout.VERTICAL); view.setGravity(Gravity.CENTER); view.setPadding(24, 16, 24, 16);
         ImageView qr = new ImageView(this);
@@ -581,19 +588,19 @@ public final class MainActivity extends Activity {
         description.setText(ui("جارٍ فتح الاقتران…", "Opening pairing…"));
         view.addView(description);
         AlertDialog dialog = new AlertDialog.Builder(this).setTitle(ui("التحكم من الجوال", "Phone controls")).setView(view)
-                .setOnCancelListener(unused -> phone.stop(session))
-                .setNegativeButton(ui("إيقاف الاقتران", "Stop pairing"), (unused, which) -> phone.stop(session)).create();
+                .setOnCancelListener(unused -> owner.stop(session))
+                .setNegativeButton(ui("إيقاف الاقتران", "Stop pairing"), (unused, which) -> owner.stop(session)).create();
         showPhoneDialog(session, dialog);
         if (!dialog.isShowing()) { closePhonePairing(); return; }
         // The dialog already owns this generation. A close while looking up the LAN
         // address invalidates it before a listener can be created by the worker.
         qrWorker = new Thread(() -> {
             try {
-                String link = phone.startReserved(session, LocalPhoneServer.localAddress());
-                if (!phone.current(session)) return;
+                String link = owner.startReserved(session, LocalPhoneServer.localAddress());
+                if (!owner.current(session)) return;
                 Bitmap bitmap = phoneQrBitmap(link);
                 runOnUiThread(() -> {
-                    if (phoneDialog != dialog || !phone.current(session)) return;
+                    if (phoneDialog != dialog || !owner.current(session)) return;
                     qr.setImageBitmap(bitmap);
                     description.setText(ui("امسح الرمز خلال دقيقتين على شبكة المشرفين الخاصة، وطابق الرقم على الجهازين ثم وافق بريموت التلفزيون. الاتصال محلي غير مشفّر. تنتهي الجلسة بعد 15 دقيقة.\n",
                             "Scan on the private staff network within two minutes, match the numbers, then approve on the TV. The local connection is unencrypted. Pairing ends after 15 minutes.\n")
@@ -636,7 +643,10 @@ public final class MainActivity extends Activity {
     }
 
     private void closePhonePairing() {
-        if (phone != null) phone.stop();
+        LocalPhoneServer owner = phone;
+        phone = null;
+        phoneDialogSession = 0;
+        if (owner != null) owner.stop();
         if (qrWorker != null) { qrWorker.interrupt(); qrWorker = null; }
         AlertDialog previous = phoneDialog;
         phoneDialog = null;
@@ -680,13 +690,15 @@ public final class MainActivity extends Activity {
     }
 
     private void evaluatePhoneSettings(long session, String id, boolean apply) {
+        LocalPhoneServer owner = phone;
+        if (owner == null || owner.session() != session) return;
         if (session != phoneDialogSession || pairedSessionStatus == null || !operatorAllowed() || mainFrameFailed) {
-            phone.finishRequest(id, "{\"ok\":false,\"error\":\"unavailable\"}");
+            owner.finishRequest(id, "{\"ok\":false,\"error\":\"unavailable\"}");
             return;
         }
         // Only a native UUID is inserted in program text. The JSON is pulled once as data
         // on the renderer's bridge thread, alongside a revocation check at application time.
-        String action = apply ? "api.apply(JSON.parse(raw),active)" : "api.state()";
+        String action = apply ? "api.apply(JSON.parse(raw),active)" : "api.state(raw==='export')";
         String script = "(function(id){var bridge=window.MosqueAndroid;"
                 + "function active(){return bridge.phoneSettingsActive(id)}"
                 + "function done(v){bridge.finishPhoneSettingsRequest(id,JSON.stringify(v))}"
@@ -698,21 +710,22 @@ public final class MainActivity extends Activity {
     }
 
     private void confirmPhonePairing(long session, String code) {
-        if (!phone.waiting(session)) return;
+        final LocalPhoneServer owner = phone;
+        if (owner == null || !owner.waiting(session)) return;
         if (!operatorAllowed() || operatorDialog == null || operatorDialog != phoneDialog || phoneDialogSession != session) {
-            phone.stop(session);
+            owner.stop(session);
             return;
         }
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle(ui("تأكيد الجوال", "Confirm phone"))
                 .setMessage(ui("طابق هذا الرقم مع الرقم على جوال المشرف قبل السماح بالتحكم:", "Check this number against the operator's phone before allowing control:") + "\n\n" + code)
-                .setOnCancelListener(unused -> phone.stop(session))
-                .setNegativeButton(ui("رفض", "Reject"), (unused, which) -> phone.stop(session))
+                .setOnCancelListener(unused -> owner.stop(session))
+                .setNegativeButton(ui("رفض", "Reject"), (unused, which) -> owner.stop(session))
                 .setPositiveButton(ui("الرقم مطابق", "Numbers match"), (unused, which) -> {
-                    if (operatorAllowed() && phone.approve(session)) {
+                    if (operatorAllowed() && owner.approve(session)) {
                         showPairedSession(session);
                         publishNotice(ui("تم اقتران جوال المشرف.", "Operator phone paired."));
-                    } else phone.stop(session);
+                    } else owner.stop(session);
                 }).create();
         showPhoneDialog(session, dialog);
         dialog.getButton(AlertDialog.BUTTON_NEGATIVE).requestFocus();

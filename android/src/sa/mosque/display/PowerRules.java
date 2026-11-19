@@ -29,6 +29,9 @@ final class PowerRules {
         if(minute<0||minute>=1440||start<0||start>=1440||end<0||end>=1440||start==end)return false;
         return start<end ? minute>=start&&minute<end : minute>=start||minute<end;
     }
+    static boolean curtainVisible(boolean praying, boolean manualBlack, boolean outsideSchedule, long elapsed, long operatorUntil) {
+        return !praying && (manualBlack || (outsideSchedule && elapsed >= operatorUntil));
+    }
     /** Next possible change in the local schedule, temporary wake or sleep countdown. */
     static long nextCheckDelay(boolean scheduled, long wallMillis, long elapsed, long operatorUntil, long sleepAt) {
         long delay = scheduled ? 60_000L - Math.floorMod(wallMillis, 60_000L) : Long.MAX_VALUE;

@@ -127,7 +127,7 @@ On staff Wi-Fi, open phone pairing on the TV, scan the QR code and compare the s
 
 Open **Version and updates → Check for an app update**, download the release, and select **Install**. Complete Android's permission and installation prompts if requested. Updating requires a temporary internet connection; local display continues without internet. You can also install the new APK manually over the existing app.
 
-Installing 2.5.0 over 2.4.0 retains your mosque profile and prayer timetable. The TV updater shows the latest published release. [Releases](https://github.com/adel2184/mosque-tv/releases/latest) · [Verification report (Arabic)](android/TEST_REPORT_TV.md)
+Installing 2.5.1 over 2.5.0 retains your mosque profile and prayer timetable. The TV updater shows the latest published release. [Releases](https://github.com/adel2184/mosque-tv/releases/latest) · [Verification report (Arabic)](android/TEST_REPORT_TV.md)
 
 <a id="faq"></a>
 ## Frequently asked questions

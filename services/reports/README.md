@@ -10,15 +10,15 @@
 
 يمكن تضمين الملفات العامة نفسها داخل APK. عند وجود `window.MosqueReportNative.startSend` تستدعي الصفحة هذه الدالة بنص JSON المعروض حرفيًا، ولا تستخدم fetch. يؤكد الغلاف الأصلي العملية ويرسل HTTPS، ثم يعيد حدث `mosque-report-result` بتفصيل `{ok,id?,error?}`. يطبق حدث `mosque-report-language` بقيمة detail إما ar أو en لغة الغلاف. لا تظهر رسالة نجاح إلا بعد `ok:true` ومعرف nonce المطابق. على الغلاف إلغاء العملية عند الإغلاق أو بدء الصلاة ومنع النتائج القديمة؛ تأكيدات نظام Android مستقلة.
 
-أداة الوكيل أو الكمبيوتر تحتاج Node20 أو أحدث فقط، بلا ADB أو حزم إضافية:
+أداة الوكيل أو الكمبيوتر تحتاج Node 24 أو أحدث فقط، بلا ADB أو حزم إضافية:
 
 ```text
-node optimize/share.cjs --preview --problem --owner "تعذر فتح الإعدادات" "ملاحظة إضافية" --app-version 2.3.0
+node optimize/share.cjs --preview --problem --owner "تعذر فتح الإعدادات" "ملاحظة إضافية" --app-version 2.5.1
 node optimize/share.cjs --preview --setup --owner "اكتمل الإعداد" --out reviewed-report.json
 node optimize/share.cjs --send "PATH_PRINTED_BY_PREVIEW" --confirm
 ```
 
-الأمر الأول يحفظ ملفًا منقحًا في مجلد النظام المؤقت ويطبع محتواه ومساره؛ لا يرسل شيئًا. `--out` يحدد مكانًا تختاره ولا يستبدل ملفًا موجودًا. راجع الملف قبل أمر الإرسال؛ يلزم `--confirm` صراحةً، ويُرسل نفس محتواه دون إضافة بيانات جهاز. الإصدار الافتراضي 2.3.0؛ حدد الإصدار الفعلي عند الإبلاغ عن نسخة أخرى. غلاف POSIX هو `optimize/share.sh` بالوسائط نفسها.
+الأمر الأول يحفظ ملفًا منقحًا في مجلد النظام المؤقت ويطبع محتواه ومساره؛ لا يرسل شيئًا. `--out` يحدد مكانًا تختاره ولا يستبدل ملفًا موجودًا. راجع الملف قبل أمر الإرسال؛ يلزم `--confirm` صراحةً، ويُرسل نفس محتواه دون إضافة بيانات جهاز. الإصدار الافتراضي 2.5.1؛ حدد الإصدار الفعلي عند الإبلاغ عن نسخة أخرى. غلاف POSIX هو `optimize/share.sh` بالوسائط نفسها.
 
 ## المخطط والخصوصية
 
@@ -30,7 +30,7 @@ node optimize/share.cjs --send "PATH_PRINTED_BY_PREVIEW" --confirm
   "category": "problem",
   "message": "Operator-reviewed note",
   "notes": "",
-  "appVersion": "2.3.0",
+  "appVersion": "2.5.1",
   "androidApi": 30,
   "manufacturer": "TCL",
   "setup": { "disabledCount": 0, "restoredCount": 0 },

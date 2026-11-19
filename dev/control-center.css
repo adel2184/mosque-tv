@@ -10,3 +10,8 @@
 /* Keep remote focus cheap on TV GPUs: no live backdrop blur, no animated background under menus. */
 body.controls-open .ticker-track,body.settings-open .ticker-track{animation-play-state:paused!important}
 .mosque-control-center,.tv-settings,.cc-content,.tv-settings-rows,.tv-settings-menu{scroll-behavior:auto}
+/* This fixed overlay exists only after its first use. Retain its layout between
+   openings so focusing a remote button does not rebuild the entire panel. */
+.mosque-control-overlay{contain:strict}
+.mosque-control-overlay[hidden]{display:block!important;visibility:hidden;pointer-events:none}
+#settingsDialog.tv-settings{contain:layout paint}

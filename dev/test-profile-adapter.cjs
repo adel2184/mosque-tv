@@ -2,7 +2,7 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),crypto=require('node:crypto');
 const engine=require('./location-engine.js'),store=require('./profile-store.js'),source=fs.readFileSync(path.join(__dirname,'profile-adapter.js'),'utf8');
-const calendar=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/setup-calendar.json'),'utf8')),librarySource=fs.readFileSync(path.join(__dirname,'vendor/adhan/package/lib/bundles/adhan.umd.js'),'utf8'),engineSource=fs.readFileSync(path.join(__dirname,'location-engine.js'),'utf8');
+const calendar=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/setup-calendar.json'),'utf8')),librarySource=fs.readFileSync(path.join(__dirname,'vendor/adhan/adhan.umd.cjs'),'utf8'),engineSource=fs.readFileSync(path.join(__dirname,'location-engine.js'),'utf8');
 const clone=value=>JSON.parse(JSON.stringify(value)),assert=(value,message='Assertion failed')=>{if(!value)throw Error(message);};
 const eq=(a,b)=>assert(a===b,`Expected ${JSON.stringify(b)}; got ${JSON.stringify(a)}`),same=(a,b)=>eq(JSON.stringify(a),JSON.stringify(b));
 const profile=()=>({language:'ar',countryId:'SA',cityId:'110336',timezone:'Asia/Riyadh',hourFormat:12,dateStyle:'both',methodId:'UmmAlQura',neighborhood:'',mosqueName:'جامع الاختبار',latitude:26.43442,longitude:50.10326});

@@ -21,12 +21,12 @@ final class PowerController {
     private final SharedPreferences preferences;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final TextView curtain;
-    private long operatorUntil;
+    private volatile long operatorUntil;
     private volatile long sleepAt;
     private volatile boolean manualBlack;
     private boolean closed;
     private boolean foreground;
-    private boolean prayer;
+    private volatile boolean prayer;
     private String lastState = "";
     private final Runnable timer = this::apply;
 
@@ -67,11 +67,12 @@ final class PowerController {
     JSONObject status() {
         JSONObject result = new JSONObject();
         String mode = preferences.getString("mode", "always"), zone = timezone();
-        boolean active = !manualBlack && (!"scheduled".equals(mode) || scheduledNow());
+        boolean outsideSchedule = "scheduled".equals(mode) && !scheduledNow();
+        boolean active = !manualBlack && !outsideSchedule;
         try {
             result.put("mode", mode).put("start", preferences.getString("start", "04:00"))
                     .put("end", preferences.getString("end", "23:00")).put("timezone", zone).put("active", active)
-                    .put("screenBlack", !prayer && (manualBlack || (!active && SystemClock.elapsedRealtime() >= operatorUntil)))
+                    .put("screenBlack", PowerRules.curtainVisible(prayer, manualBlack, outsideSchedule, SystemClock.elapsedRealtime(), operatorUntil))
                     .put("sleepMinutes", sleepAt == 0 ? 0 : Math.max(1, (sleepAt - SystemClock.elapsedRealtime() + 59_999L) / 60_000L))
                     .put("message", "system".equals(mode) ? "السكون حسب إعدادات التلفزيون."
                             : "scheduled".equals(mode) ? "ساعات العرض وفق المنطقة الزمنية " + zone + "؛ خارجها عرض أسود مع بقاء التلفزيون مستيقظًا. هذا لا يطفئ لوحة الشاشة."
@@ -113,21 +114,26 @@ final class PowerController {
     }
     void displayOff() { sleepAt = 0; manualBlack = true; operatorUntil = 0; apply(); }
     void resume() { foreground = true; apply(); }
-    void pause() { foreground = false; handler.removeCallbacks(timer); }
+    void pause() {
+        foreground = false;
+        handler.removeCallbacks(timer);
+        setKeepScreenOn(false);
+    }
+    private void setKeepScreenOn(boolean keepOn) {
+        int flag = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
+        if (keepOn == ((activity.getWindow().getAttributes().flags & flag) != 0)) return;
+        if (keepOn) activity.getWindow().addFlags(flag);
+        else activity.getWindow().clearFlags(flag);
+    }
     private void apply() {
         if (closed || !foreground || activity.isFinishing() || activity.isDestroyed()) return;
         handler.removeCallbacks(timer);
         String mode = preferences.getString("mode", "always");
-        boolean keepOn = !"system".equals(mode);
-        int flag = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
-        if (keepOn != ((activity.getWindow().getAttributes().flags & flag) != 0)) {
-            if (keepOn) activity.getWindow().addFlags(flag);
-            else activity.getWindow().clearFlags(flag);
-        }
+        setKeepScreenOn(!"system".equals(mode));
         long elapsed = SystemClock.elapsedRealtime();
         if (sleepAt > 0 && elapsed >= sleepAt) { sleepAt = 0; manualBlack = true; operatorUntil = 0; }
         boolean scheduled = "scheduled".equals(mode);
-        boolean black = !prayer && (manualBlack || (scheduled && !scheduledNow() && elapsed >= operatorUntil));
+        boolean black = PowerRules.curtainVisible(prayer, manualBlack, scheduled && !scheduledNow(), elapsed, operatorUntil);
         String label = manualBlack ? "العرض متوقف مؤقتًا\nاضغط أي سهم لاستئنافه، أو اختيار لفتح مركز التحكم" : "خارج ساعات العرض\nاضغط اختيار أو MENU لفتح مركز التحكم";
         if (!label.contentEquals(curtain.getText())) curtain.setText(label);
         if (black != isBlack()) curtain.setVisibility(black ? View.VISIBLE : View.GONE);
@@ -136,5 +142,5 @@ final class PowerController {
         long delay = PowerRules.nextCheckDelay(scheduled, System.currentTimeMillis(), elapsed, operatorUntil, sleepAt);
         if (delay != Long.MAX_VALUE) handler.postDelayed(timer, delay);
     }
-    void destroy() { closed = true; handler.removeCallbacks(timer); }
+    void destroy() { closed = true; pause(); }
 }

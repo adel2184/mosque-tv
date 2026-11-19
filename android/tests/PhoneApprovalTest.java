@@ -34,6 +34,19 @@ public final class PhoneApprovalTest {
         check(!timeout.request(other, "second", deadline));
         PhoneApproval unopened = new PhoneApproval(100, "654321");
         check(!unopened.request(operator, "first", 100 + PhoneApproval.SCAN_MS));
+        PhoneApproval budget = new PhoneApproval(500, "123456");
+        for (int i = 0; i < PhoneApproval.FAILURE_LIMIT; i++) {
+            check(budget.authenticationAllowed("first", 501));
+            budget.authenticationFailed("first", 501);
+        }
+        check(!budget.authenticationAllowed("first", 502));
+        check(budget.authenticationAllowed("second", 502));
+        check(!budget.authenticationAllowed("first", 499 + PhoneApproval.FAILURE_WINDOW_MS));
+        check(budget.authenticationAllowed("first", 500 + PhoneApproval.FAILURE_WINDOW_MS));
+        for (int i = 0; i < PhoneApproval.MAX_FAILURE_PEERS; i++) budget.authenticationFailed("peer-" + i, 31_000L);
+        for (int i = 0; i < PhoneApproval.FAILURE_LIMIT; i++) budget.authenticationFailed("additional-" + i, 31_001L);
+        check(!budget.authenticationAllowed("unknown", 31_002L));
+        check(budget.authenticationAllowed("peer-1", 31_002L));
         System.out.println("PASS " + checks + " phone enrollment and command budget checks");
     }
 }

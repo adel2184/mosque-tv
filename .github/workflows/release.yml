@@ -67,7 +67,7 @@ jobs:
           java-version: '17'
       - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         with:
-          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          packages: 'platform-tools platforms;android-37.2 build-tools;37.0.0'
           log-accepted-android-sdk-licenses: 'false'
       - name: Rebuild the reviewed web bundle
         shell: pwsh
@@ -95,8 +95,8 @@ jobs:
             [IO.File]::WriteAllText($passwordFile, $env:MOSQUE_KEYSTORE_PASSWORD, [Text.UTF8Encoding]::new($false))
             Remove-Item Env:MOSQUE_KEYSTORE_BASE64, Env:MOSQUE_KEYSTORE_PASSWORD
             $env:MOSQUE_JAVA_HOME = $env:JAVA_HOME
-            $env:MOSQUE_BUILD_TOOLS = Join-Path $env:ANDROID_HOME 'build-tools/35.0.0'
-            $env:MOSQUE_ANDROID_JAR = Join-Path $env:ANDROID_HOME 'platforms/android-35/android.jar'
+            $env:MOSQUE_BUILD_TOOLS = Join-Path $env:ANDROID_HOME 'build-tools/37.0.0'
+            $env:MOSQUE_ANDROID_JAR = Join-Path $env:ANDROID_HOME 'platforms/android-37.2/android.jar'
             $env:MOSQUE_RELEASE = '1'
             node android/build.cjs
             if ($LASTEXITCODE -ne 0) { throw 'APK signing failed.' }

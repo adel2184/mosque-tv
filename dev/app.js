@@ -598,17 +598,20 @@
     const legacyAddress=settings.mosque.fields.address.value;
     const p=activeProfile||settings.displayPreferences;
     return {hourFormat:p?.hourFormat??12,dateStyle:p?.dateStyle??'both',
-      neighborhood:p?.neighborhood??(legacyAddress.length<=180?legacyAddress:'')};
+      neighborhood:p?.neighborhood??(settings.mosque.fields.address.visible&&legacyAddress.length<=180?legacyAddress:'')};
   }
-  function phoneState() {
+  function phoneState(exportBackup=false) {
     if(setupPending||!database||installationError)return {ok:false,error:'unavailable'};
-    const backup=validateSettings(savedSettings);
-    backup.displayPreferences=phonePreferences(backup);
-    const settings=window.MosquePhoneSchema.project(backup,backup.displayPreferences,displayContent.ticker);
+    const preferences=phonePreferences(savedSettings);
+    const settings=window.MosquePhoneSchema.project(savedSettings,preferences,displayContent.ticker);
     if(!settings.mosqueName&&activeProfile)settings.mosqueName=activeProfile.mosqueName;
+    const response={ok:true,revision:settingsRevision,settings};
+    if(exportBackup!==true)return response;
+    const backup=validateSettings(savedSettings);
+    backup.displayPreferences=preferences;
     backup.announcements=settings.announcements;
     backup.manualOverrides=settings.manualOverrides;
-    return {ok:true,revision:settingsRevision,settings,backup};
+    return {...response,backup};
   }
   function phoneGuard(revision,live) {
     if(!live())throw Error('unavailable');
@@ -803,7 +806,7 @@
   let tvSections=[],tvSectionId='mosque',tvPane='menu',tvEditor=null,tvLastFocus='',tvScroll={},tvControlOrigin=false,tvNativeRefreshPending=false;
   function tvKey(text){let hash=2166136261;for(let i=0;i<text.length;i++)hash=Math.imul(hash^text.charCodeAt(i),16777619);return(hash>>>0).toString(36);}
   function tvKeepSelectedMenuVisible(){const selected=$('tv-section-'+tvSectionId);if(selected&&selected.scrollIntoView)selected.scrollIntoView({block:'nearest',inline:'nearest'});}
-  function tvFocus(id){const node=$(id);if(!node||node.disabled)return;try{node.focus({preventScroll:true});}catch(_){node.focus();}if(node.scrollIntoView)node.scrollIntoView({block:'nearest',inline:'nearest'});tvLastFocus=id;if(id.startsWith('tv-row-'))tvKeepSelectedMenuVisible();}
+  function tvFocus(id){const node=$(id);if(!node||node.disabled)return;tvLastFocus=id;if(node===document.activeElement)return;try{node.focus({preventScroll:true});}catch(_){node.focus();}if(node.scrollIntoView)node.scrollIntoView({block:'nearest',inline:'nearest'});}
   function tvValue(row){const value=typeof row.value==='function'?row.value():row.value;return value===undefined||value===null?'':value;}
   function tvSummary(row){const value=tvValue(row);if(row.kind==='checkbox')return value?'نعم':'لا';if(row.kind==='select'){const choice=(row.options||[]).find(item=>String(item[0])===String(value));return choice?choice[1]:String(value);}return String(value).trim()||'غير محدد';}
   function tvLegacySection(page){
@@ -832,7 +835,7 @@
     return section;
   }
   function tvRenderHub(preferredFocus){
-    const oldList=$('tvSettingsRows');if(oldList)tvScroll[tvSectionId]=oldList.scrollTop;
+    const oldList=$('tvSettingsRows');if(oldList)tvScroll[oldList.dataset.section]=oldList.scrollTop;
     const current=tvSections.find(section=>section.id===tvSectionId)||tvSections[0];if(!current)return;tvSectionId=current.id;
     const hub=el('div','tv-hub tv-pane-'+tvPane);hub.id='tvSettingsHub';
     const back=button(tvPane==='menu'?'‹ مركز التحكم':'‹ كل الإعدادات',tvHandleBack);back.id='tvSettingsBack';back.className='tv-settings-back';hub.append(back);
@@ -843,28 +846,29 @@
     }else{
       const pane=el('section','tv-settings-pane');pane.append(el('h3','tv-section-heading',current.title));
       if(current.help)pane.append(el('p','tv-section-help',current.help));
-      const list=el('div','tv-settings-rows');list.id='tvSettingsRows';
+      const list=el('div','tv-settings-rows');list.id='tvSettingsRows';list.dataset.section=current.id;
       current.rows.forEach(row=>{
-        const b=button('',()=>{tvLastFocus=b.id;if(row.kind==='action'){try{row.action();if(settingsOpen&&!tvEditor)drawSettings();}catch(error){message(error.message,true);}}else if(row.kind!=='info')tvOpenEditor(row);});
+        const b=button('',()=>{tvLastFocus=b.id;if(row.kind==='action'){try{row.action();if(settingsOpen&&!tvEditor&&!current.id.startsWith('tv-'))drawSettings();}catch(error){message(error.message,true);}}else if(row.kind!=='info')tvOpenEditor(row);});
         b.id='tv-row-'+row.id;b.className='tv-setting-row';b.dataset.tvZone='rows';b.dataset.tvKind=row.kind;b.disabled=Boolean(row.disabled)||row.kind==='info';
         const copy=el('span','tv-row-copy');copy.append(el('span','tv-row-label',row.label));if(row.help)copy.append(el('span','tv-row-help',row.help));b.append(copy,el('span','tv-row-value',tvSummary(row)));list.append(b);
       });
       pane.append(list);hub.append(pane);
     }
     $('settingsBody').replaceChildren(hub);
-    const visibleRows=$('tvSettingsRows');if(visibleRows)visibleRows.scrollTop=tvScroll[tvSectionId]||0;
-    if(preferredFocus&&$(preferredFocus))tvFocus(preferredFocus);
-    tvKeepSelectedMenuVisible();
+    const visibleRows=$('tvSettingsRows');if(visibleRows&&tvScroll[tvSectionId])visibleRows.scrollTop=tvScroll[tvSectionId];
+    if($('settingsDialog').open){
+      if(preferredFocus&&$(preferredFocus))tvFocus(preferredFocus);
+      else if(tvPane==='menu'&&preferredFocus)tvKeepSelectedMenuVisible();
+    }
   }
   function drawSettings(){
     tvNativeRefreshPending=false;
     const preferred=tvMode?(document.activeElement?.id||tvLastFocus):'';
-    if(tvMode&&$('tvSettingsRows'))tvScroll[tvSectionId]=$('tvSettingsRows').scrollTop;
     if(!tvMode){$('settingsBody').replaceChildren(...settingsPages.map(settingsSection));return;}
     tvSections=settingsPages.map(page=>({id:page.id,title:page.title,rows:[]}));
     const selectedPage=settingsPages.find(page=>page.id===tvSectionId);
     if(window.MosqueTVNative&&typeof window.MosqueTVNative.getSections==='function'){
-      try{tvSections.push(...window.MosqueTVNative.getSections(tvPane==='menu'||Boolean(selectedPage)));}
+      try{tvSections.push(...window.MosqueTVNative.getSections(tvPane==='menu'||Boolean(selectedPage),tvSectionId));}
       catch(_){message('تعذر قراءة بعض خيارات التلفاز؛ تبقى إعدادات الجامع متاحة.',true);}
     }
     if(tvPane==='rows'){
@@ -974,7 +978,10 @@
   if(tvMode){
     document.addEventListener('keydown',tvHandleKey,true);
     document.addEventListener('focusin',event=>{if(event.target?.id?.startsWith('tv-row-')){tvLastFocus=event.target.id;tvPane='rows';}});
-    window.MosqueTV={isOpen:()=>settingsOpen,handleBack:tvHandleBack,toggleSettings:()=>settingsOpen?closeSettings(true):openSettings(),openSection:id=>openSettings(id,true),refreshNative:()=>{if(settingsOpen){if(tvEditor)tvNativeRefreshPending=true;else drawSettings();}},getUIState:()=>({section:tvSectionId,pane:tvPane,editing:tvEditor?tvEditor.row.id:null,focus:document.activeElement?.id||''})};
+    window.MosqueTV={isOpen:()=>settingsOpen,handleBack:tvHandleBack,toggleSettings:()=>settingsOpen?closeSettings(true):openSettings(),openSection:id=>openSettings(id,true),refreshNative:section=>{
+      if(!settingsOpen||tvPane!=='rows'||!tvSectionId.startsWith('tv-')||(section&&section!==tvSectionId))return;
+      if(tvEditor)tvNativeRefreshPending=true;else drawSettings();
+    },getUIState:()=>({section:tvSectionId,pane:tvPane,editing:tvEditor?tvEditor.row.id:null,focus:document.activeElement?.id||''})};
   }
   // TV_SETTINGS_UI_END
   function openSettings(section,fromControl){if(state?.phase==='PRAYER_MODE')return;if(settingsOpen)return;tvControlOrigin=Boolean(fromControl);if(typeof section==='string')tvSectionId=section;draft=clone(savedSettings);settingsOpen=true;document.body.classList.add('settings-open');tvPane=fromControl&&section!=='mosque'?'rows':'menu';$('settingsDialog').classList.remove('previewing');$('previewButton').textContent='معاينة';drawSettings();message('التغييرات مسودة؛ احفظها للاعتماد أو ارجع لإلغائها.');$('settingsDialog').showModal();if(tvMode)tvFocus(tvPane==='menu'?'tv-section-'+tvSectionId:$('tvSettingsRows')?.querySelector('button:not([disabled])')?.id||'tvSettingsBack');interaction();}

@@ -142,7 +142,7 @@
     "catalogGzipBytes": 804372,
     "catalogGzipSHA256": "07669e301b76015de97e37d444285980065aac032e8b3b2110858312a4a159d0",
     "calendarBytes": 86442,
-    "calendarSHA256": "dc241ecd5268d206d943f4fcd0f6711ae2b8f1d5e6555d82ea6c831ef7767bb3",
+    "calendarSHA256": "5cb75ffe023b44540313e06f383a593c5e85469c88f8ddba44c2bf0e99fa0b89",
     "calendarMonths": 1897,
     "sourceMonthLengths": {
       "28": 5,

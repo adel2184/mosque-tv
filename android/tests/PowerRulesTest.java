@@ -47,5 +47,20 @@ public final class PowerRulesTest {
             throw new AssertionError("Display power callback deadline");
         }
         System.out.println("PASS 7 idle, schedule, operator and countdown callback checks");
+        for (int minute = 0; minute < 30 * 1440; minute++) {
+            int dayMinute = minute % 1440;
+            boolean outside = !PowerRules.within(dayMinute, 240, 1380);
+            long now = minute * 60_000L;
+            // Each civil day opens 04:00–23:00. The prayer layer takes priority
+            // over manual/scheduled blackout and restores it on the next state.
+            if (PowerRules.curtainVisible(false, false, outside, now, 0) != (dayMinute < 240 || dayMinute >= 1380)
+                    || !PowerRules.curtainVisible(false, true, outside, now, 0)
+                    || PowerRules.curtainVisible(true, true, outside, now, 0)
+                    || PowerRules.curtainVisible(true, false, outside, now, 0)
+                    || PowerRules.curtainVisible(false, false, outside, now, now + 300_000L)) {
+                throw new AssertionError("Manual/scheduled/prayer restoration at minute " + minute);
+            }
+        }
+        System.out.println("PASS 43,200 simulated minutes of quiet hours, manual blackout, prayer and operator override");
     }
 }

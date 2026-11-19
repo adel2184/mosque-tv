@@ -1,5 +1,7 @@
 # Preserve pinned upstream bytes on Windows checkouts.
 index.html text eol=lf
+dev/vendor/adhan/adhan.umd.cjs -text
+dev/vendor/hijridate/ummalqura.py -text
 android/device-profiles.json -text
 licenses/CleanYourTV-MIT.txt -text
 licenses/CleanYourTV-NOTICE.txt -text

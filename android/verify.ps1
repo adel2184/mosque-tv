@@ -24,6 +24,9 @@ try {
     try { return [System.BitConverter]::ToString($hash.ComputeHash($bytes)).Replace('-','').ToLowerInvariant() } finally { $hash.Dispose() }
   }
   $names = @($archive.Entries | ForEach-Object { $_.FullName })
+  if ((Byte-Hash (Read-ApkBytes 'assets/web/DATA_SOURCES.md')) -ne (Get-FileHash -LiteralPath (Join-Path $projectRoot 'DATA_SOURCES.md') -Algorithm SHA256).Hash.ToLowerInvariant()) {
+    throw 'Packaged data attribution differs from release source.'
+  }
   if ($names | Where-Object { $_.Contains('\') }) { throw 'Invalid Windows separators in APK ZIP entries.' }
   foreach ($required in @('AndroidManifest.xml','resources.arsc','classes.dex','assets/web/index.html','assets/web/assets/data/location-catalog.js','assets/update-config.json','assets/phone.html','assets/web/licenses/qrcodegen-MIT.txt','assets/web/licenses/adhan-MIT.txt','assets/web/licenses/hijridate-MIT.txt','assets/web/licenses/geonames-CC-BY-4.0.txt','assets/web/licenses/geonames-NOTICE.txt','assets/web/licenses/Unicode-3.0.txt','assets/web/DATA_SOURCES.md','assets/web/ANDROID_SOURCES_LICENSES.md','assets/web/assets/fonts/OFL.txt')) {
     if ($names -notcontains $required) { throw "Required APK entry missing: $required" }
@@ -104,8 +107,12 @@ try {
   if (@(Compare-Object $expectedPermissions $permissions).Count -ne 0) { throw 'Unexpected app permission set.' }
   $updateConfig = [System.Text.Encoding]::UTF8.GetString((Read-ApkBytes 'assets/update-config.json')) | ConvertFrom-Json
   if ($updateConfig.owner -ne 'adel2184' -or $updateConfig.repository -ne 'mosque-tv' -or $updateConfig.metadataAsset -ne 'update.json') { throw 'Wrong update repository.' }
-  if ($build.signatureVerification -notmatch 'Verified using v2 scheme.*true' -or $build.signatureVerification -notmatch 'Verified using v3 scheme.*true') { throw 'Signature verification did not pass.' }
-  if ($build.signatureVerification -notmatch 'Signer #1 certificate SHA-256 digest: 4cb9564d63fd3f037d12e2ed98af1bf7255a7fb7ef53d6a57aba020b5e9b061e') { throw 'Signing identity changed; upgrade would not preserve installed app.' }
+  $signatureLines = $build.signatureVerification -split '\r?\n'
+  foreach ($scheme in @(2,3)) {
+    if ($signatureLines -cnotcontains "Verified using v$scheme scheme (APK Signature Scheme v${scheme}): true") { throw 'Signature verification did not pass.' }
+  }
+  $certDigest = 'certificate SHA-256 digest: 4cb9564d63fd3f037d12e2ed98af1bf7255a7fb7ef53d6a57aba020b5e9b061e'
+  if ($signatureLines -cnotcontains 'Number of signers: 1' -or ($signatureLines -cnotcontains "Signer #1 $certDigest" -and $signatureLines -cnotcontains "V3.0 Signer: $certDigest")) { throw 'Signing identity changed; upgrade would not preserve installed app.' }
   $result = [ordered]@{
     verifiedAt = [DateTime]::UtcNow.ToString('o'); apkSHA256 = $apkHash; apkBytes = (Get-Item -LiteralPath $apkPath).Length
     entryCount = $names.Count; minSdk = $build.minSdk; targetSdk = $build.targetSdk; versionName = $versionName; versionCode = $versionCode; tvLauncher = $true; homeCandidate = $true

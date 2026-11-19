@@ -28,7 +28,10 @@ test('A fresh installation requires setup; existing defaults project exact compa
   const app=legacy(),view=api(app).state();
   assert.equal(view.ok,true);schema.validateEditor(view.settings);
   assert.equal(view.settings.announcements.length,2);assert.equal(view.settings.jumuahTime,'');
-  assert.equal(view.backup.mosque.fields.name.value,defaults.mosque.fields.name.value);
+  assert.equal(view.backup,undefined);
+  const exported=api(app).state(true);assert.equal(exported.backup.mosque.fields.name.value,defaults.mosque.fields.name.value);
+  assert.doesNotMatch(JSON.stringify(view),/"(location|contact|imam|custom|donation|adhanAdjustments)"/);
+  assert.doesNotMatch(JSON.stringify(exported),/"(records|timetable|profile|timezone)"/);
   assert.doesNotMatch(JSON.stringify(view),/"(records|timetable|profile|timezone)"/);
   assert.equal(app.writes.length,0);
 });
@@ -38,6 +41,7 @@ test('A single atomic settings apply updates identity, reordered plain-text anno
     announcements:[{label:'ثانٍ',text:'إعلان ثانٍ'},{label:'أول',text:'<b>نص عادي</b>'}],silentPhoneReminder:false,postPrayerMinutes:3});
   const result=await api(app).apply(req,live);
   assert.equal(result.ok,true,JSON.stringify(result));assert(result.revision>req.revision);
+  assert.equal(result.backup,undefined);
   const saved=JSON.parse(app.storage.get(INSTALL));
   assert.equal(saved.profile.mosqueName,req.settings.mosqueName);
   assert.equal(saved.profile.neighborhood,req.settings.neighborhood);
@@ -150,7 +154,7 @@ test('A TV draft or preview opened immediately after a phone commit survives the
   app.window.setTimeout=fn=>{resume=fn;return 1;};
   const operation=phone.apply(req,live);
   assert.equal(typeof resume,'function');
-  const latest=phone.state();assert.equal(latest.settings.mosqueName,req.settings.mosqueName);
+  const latest=phone.state(true);assert.equal(latest.settings.mosqueName,req.settings.mosqueName);
   app.api.openSettings();
   const local={...latest.backup,postPrayerMinutes:7};
   const file=app.document.getElementById('settingsFile'),content=JSON.stringify(local);

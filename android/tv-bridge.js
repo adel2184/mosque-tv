@@ -81,8 +81,8 @@
     var index = candidates.indexOf(active), next = candidates[Math.max(0, Math.min(candidates.length - 1, index + direction))];
     if (next && next !== active) { event.preventDefault(); next.focus(); if (next.scrollIntoView) next.scrollIntoView({block:'nearest',inline:'nearest'}); }
   });
-  function refreshHomeStatus() {
-    if (window.MosqueTV && window.MosqueTV.isOpen()) { window.MosqueTV.refreshNative(); return; }
+  function refreshHomeStatus(event) {
+    if (window.MosqueTV && window.MosqueTV.isOpen()) { window.MosqueTV.refreshNative(event && event.type==='mosque-native-home-result' ? 'tv-home' : undefined); return; }
     var node = document.getElementById('tv-home-status');
     if (!node) return;
     var request = document.getElementById('tv-request-home');
@@ -153,6 +153,46 @@
     return argument === undefined ? native[method]() : native[method](argument);
   }
   function nativeAction(id, label, method, argument, help) { return { id: id, label: label, value: 'فتح', help: help || '', kind: 'action', action: function () { invoke(method, argument); } }; }
+  function homeSection() {
+    var home = readState('homeStatus', {});
+    var validHome = typeof home.isDefaultHome === 'boolean' && typeof home.canRequestHomeRole === 'boolean' && typeof home.canOpenHomeSettings === 'boolean';
+    var homeText = !validHome ? 'تعذر قراءة إعداد واجهة البدء.' : home.isDefaultHome ? 'التطبيق هو واجهة البدء الافتراضية.' : 'التطبيق ليس واجهة البدء الافتراضية.';
+    if (validHome) homeText = homeMessage(home, homeText);
+    var request = nativeAction('tv-request-home', 'اختيار التطبيق كواجهة البدء', 'requestHomeRole');
+    request.disabled = !validHome || home.isDefaultHome || (!home.canRequestHomeRole && !home.canOpenHomeSettings);
+    return {id:'tv-home',title:nativeSectionTitles['tv-home'],help:'اختيار HOME إعداد نظام مستقل عن مسودة بيانات الجامع، ويغيّر وظيفة زر Home. لا يعطل مشغّل TCL الأصلي.',rows:[{id:'tv-home-status',label:'الحالة الحالية',kind:'info',value:homeText},request,nativeAction('tv-change-home','تغيير واجهة البدء','openHomeSettings'),nativeAction('tv-system-settings','إعدادات التلفزيون','openSystemSettings')]};
+  }
+  function systemSection() {
+    var device = readState('deviceStatus', {});
+    var systemRows = [['wifi','الشبكة وWi-Fi'],['bluetooth','البلوتوث والريموت'],['sound','الصوت'],['display','الصورة والشاشة'],['power','إعدادات الطاقة في التلفاز'],['apps','التطبيقات'],['mirror','العرض والبث من جهاز آخر'],['tv','إعدادات التلفزيون'],['app','معلومات تطبيق الجامع'],['phone','التحكم من الهاتف على الشبكة المحلية']].map(function (item) { return nativeAction('tv-control-' + item[0], item[1], 'openControl', item[0]); });
+    return {id:'tv-system',title:nativeSectionTitles['tv-system'],help:device.message||'تفتح هذه الخيارات صفحات النظام المتاحة في طرازك. الرجوع يعيدك إلى شاشة الجامع.',rows:systemRows};
+  }
+  function powerSection() {
+    var power = readState('powerStatus', {});
+    if (!powerDraft) powerDraft = { mode: ['always','scheduled','system'].includes(power.mode) ? power.mode : 'always', start: typeof power.start === 'string' ? power.start : '04:00', end: typeof power.end === 'string' ? power.end : '23:00' };
+    var editingPower = powerDraft;
+    var mode = { id:'tv-power-mode', label:'وضع تشغيل الشاشة', kind:'select', value:editingPower.mode, options:[['always','تشغيل مستمر وإبقاء الشاشة يقظة'],['scheduled','جدول عرض مع تعتيم خارج المدة'],['system','السماح بسكون التلفاز حسب النظام']], commit:function(value){ editingPower.mode=value; powerDraft=editingPower; } };
+    var start = { id:'tv-power-start', label:'بداية العرض اليومي', kind:'time', value:editingPower.start, maxLength:5, help:'المنطقة الزمنية: '+(power.timezone||'Asia/Riyadh')+' — HH:mm (24h).', commit:function(value){editingPower.start=value;powerDraft=editingPower;} };
+    var end = { id:'tv-power-end', label:'نهاية العرض اليومي', kind:'time', value:editingPower.end, maxLength:5, help:'المنطقة الزمنية: '+(power.timezone||'Asia/Riyadh')+' — يمكن أن تمتد المدة عبر منتصف الليل؛ الوقتان مختلفان.', commit:function(value){editingPower.end=value;powerDraft=editingPower;} };
+    var savePower = { id:'tv-power-save', label:'حفظ إعداد الطاقة الآن', kind:'action', value:'تطبيق مستقل', action:function(){ if(editingPower.mode==='scheduled'&&(!/^([01]\d|2[0-3]):[0-5]\d$/.test(editingPower.start)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(editingPower.end)||editingPower.start===editingPower.end)) throw Error('أدخل وقتين صحيحين ومختلفين لجدول العرض.'); invoke('savePower',JSON.stringify(editingPower)); } };
+    return {id:'tv-power',title:nativeSectionTitles['tv-power'],help:(power.message||'')+'\nهذه إعدادات جهاز مستقلة. غيّر الحقول ثم اختر «حفظ إعداد الطاقة الآن». الجدول يعتم العرض داخل التطبيق؛ لا يعد بإطفاء التلفاز كهربائيًا أو إيقاظه من الاستعداد.',rows:[{id:'tv-power-status',label:'حالة الطاقة',kind:'info',value:power.screenBlack?'العرض معتم الآن':power.active?'العرض نشط':'حسب إعداد النظام'},mode,start,end,savePower]};
+  }
+  function updateSection() {
+    var update = readState('updateStatus', {});
+    var check = nativeAction('tv-update-check','البحث عن تحديث التطبيق','checkUpdate',undefined,'يحتاج اتصالًا عند البحث فقط؛ يستمر العرض المحلي دون اتصال.');check.disabled=!update.supported||!update.configured;
+    var install = nativeAction('tv-update-install','تنزيل التحديث وتثبيته','installUpdate');install.disabled=!update.supported||!update.configured||!update.availableVersion;
+    return {id:'tv-update',title:nativeSectionTitles['tv-update'],help:'فحص التحديث اختياري. التثبيت يحتاج موافقتك في نافذة Android؛ لا يغيّر التطبيق نفسه بصمت.',rows:[{id:'tv-update-status',label:'الإصدار والحالة',kind:'info',value:(update.installedVersion||'غير محدد')+' — '+(update.message||'خدمة التحديث غير مهيأة')+(typeof update.progress==='number'&&update.progress>0?' — '+update.progress+'%':'')},check,install,nativeAction('tv-update-cancel','إلغاء مهمة التحديث','cancelUpdate')]};
+  }
+  function deviceSetupSection() {
+    return {id:'tv-device-setup',title:nativeSectionTitles['tv-device-setup'],help:'تعرض خطة إعداد الجهاز قبل أي تغيير. إعدادات الجامع والمواقيت مستقلة عنها.',rows:[nativeAction('tv-device-setup-open','فتح تهيئة التلفاز','deviceSetup')]};
+  }
+  var nativeSections = {
+    'tv-home': homeSection,
+    'tv-system': systemSection,
+    'tv-power': powerSection,
+    'tv-update': updateSection,
+    'tv-device-setup': deviceSetupSection
+  };
   window.MosqueTVNative = {
     onClose: function () { powerDraft = null; },
     onControlClose: function () { if (typeof native.cancelSpeedTest === 'function') native.cancelSpeedTest(); },
@@ -169,37 +209,16 @@
       if (!Object.prototype.hasOwnProperty.call(map,id)) throw Error('اختصار غير معروف.');
       return invoke('openControl',map[id]);
     },
-    getSections: function (titlesOnly) {
-      if (titlesOnly) return Object.keys(nativeSectionTitles).map(function (id) {
-        return {id:id, title:nativeSectionTitles[id], rows:[]};
+    getSections: function (titlesOnly, selectedId) {
+      return Object.keys(nativeSectionTitles).map(function (id) {
+        if (titlesOnly || selectedId && id !== selectedId) return {id:id, title:nativeSectionTitles[id], rows:[]};
+        return nativeSections[id]();
       });
-      var home = readState('homeStatus', {}), power = readState('powerStatus', {}), update = readState('updateStatus', {}), device = readState('deviceStatus', {});
-      var validHome = typeof home.isDefaultHome === 'boolean' && typeof home.canRequestHomeRole === 'boolean' && typeof home.canOpenHomeSettings === 'boolean';
-      var homeText = !validHome ? 'تعذر قراءة إعداد واجهة البدء.' : home.isDefaultHome ? 'التطبيق هو واجهة البدء الافتراضية.' : 'التطبيق ليس واجهة البدء الافتراضية.';
-      if (validHome) homeText = homeMessage(home, homeText);
-      if (!powerDraft) powerDraft = { mode: ['always','scheduled','system'].includes(power.mode) ? power.mode : 'always', start: typeof power.start === 'string' ? power.start : '04:00', end: typeof power.end === 'string' ? power.end : '23:00' };
-      var editingPower = powerDraft;
-      var request = nativeAction('tv-request-home', 'اختيار التطبيق كواجهة البدء', 'requestHomeRole');
-      request.disabled = !validHome || home.isDefaultHome || (!home.canRequestHomeRole && !home.canOpenHomeSettings);
-      var systemRows = [['wifi','الشبكة وWi-Fi'],['bluetooth','البلوتوث والريموت'],['sound','الصوت'],['display','الصورة والشاشة'],['power','إعدادات الطاقة في التلفاز'],['apps','التطبيقات'],['mirror','العرض والبث من جهاز آخر'],['tv','إعدادات التلفزيون'],['app','معلومات تطبيق الجامع'],['phone','التحكم من الهاتف على الشبكة المحلية']].map(function (item) { return nativeAction('tv-control-' + item[0], item[1], 'openControl', item[0]); });
-      var mode = { id:'tv-power-mode', label:'وضع تشغيل الشاشة', kind:'select', value:editingPower.mode, options:[['always','تشغيل مستمر وإبقاء الشاشة يقظة'],['scheduled','جدول عرض مع تعتيم خارج المدة'],['system','السماح بسكون التلفاز حسب النظام']], commit:function(value){ editingPower.mode=value; powerDraft=editingPower; } };
-      var start = { id:'tv-power-start', label:'بداية العرض اليومي', kind:'time', value:editingPower.start, maxLength:5, help:'المنطقة الزمنية: '+(power.timezone||'Asia/Riyadh')+' — HH:mm (24h).', commit:function(value){editingPower.start=value;powerDraft=editingPower;} };
-      var end = { id:'tv-power-end', label:'نهاية العرض اليومي', kind:'time', value:editingPower.end, maxLength:5, help:'المنطقة الزمنية: '+(power.timezone||'Asia/Riyadh')+' — يمكن أن تمتد المدة عبر منتصف الليل؛ الوقتان مختلفان.', commit:function(value){editingPower.end=value;powerDraft=editingPower;} };
-      var savePower = { id:'tv-power-save', label:'حفظ إعداد الطاقة الآن', kind:'action', value:'تطبيق مستقل', action:function(){ if(editingPower.mode==='scheduled'&&(!/^([01]\d|2[0-3]):[0-5]\d$/.test(editingPower.start)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(editingPower.end)||editingPower.start===editingPower.end)) throw Error('أدخل وقتين صحيحين ومختلفين لجدول العرض.'); invoke('savePower',JSON.stringify(editingPower)); } };
-      var check = nativeAction('tv-update-check','البحث عن تحديث التطبيق','checkUpdate',undefined,'يحتاج اتصالًا عند البحث فقط؛ يستمر العرض المحلي دون اتصال.');check.disabled=!update.supported||!update.configured;
-      var install = nativeAction('tv-update-install','تنزيل التحديث وتثبيته','installUpdate');install.disabled=!update.supported||!update.configured||!update.availableVersion;
-      return [
-        {id:'tv-home',title:nativeSectionTitles['tv-home'],help:'اختيار HOME إعداد نظام مستقل عن مسودة بيانات الجامع، ويغيّر وظيفة زر Home. لا يعطل مشغّل TCL الأصلي.',rows:[{id:'tv-home-status',label:'الحالة الحالية',kind:'info',value:homeText},request,nativeAction('tv-change-home','تغيير واجهة البدء','openHomeSettings'),nativeAction('tv-system-settings','إعدادات التلفزيون','openSystemSettings')]},
-        {id:'tv-system',title:nativeSectionTitles['tv-system'],help:device.message||'تفتح هذه الخيارات صفحات النظام المتاحة في طرازك. الرجوع يعيدك إلى شاشة الجامع.',rows:systemRows},
-        {id:'tv-power',title:nativeSectionTitles['tv-power'],help:(power.message||'')+'\nهذه إعدادات جهاز مستقلة. غيّر الحقول ثم اختر «حفظ إعداد الطاقة الآن». الجدول يعتم العرض داخل التطبيق؛ لا يعد بإطفاء التلفاز كهربائيًا أو إيقاظه من الاستعداد.',rows:[{id:'tv-power-status',label:'حالة الطاقة',kind:'info',value:power.screenBlack?'العرض معتم الآن':power.active?'العرض نشط':'حسب إعداد النظام'},mode,start,end,savePower]},
-        {id:'tv-update',title:nativeSectionTitles['tv-update'],help:'فحص التحديث اختياري. التثبيت يحتاج موافقتك في نافذة Android؛ لا يغيّر التطبيق نفسه بصمت.',rows:[{id:'tv-update-status',label:'الإصدار والحالة',kind:'info',value:(update.installedVersion||'غير محدد')+' — '+(update.message||'خدمة التحديث غير مهيأة')+(typeof update.progress==='number'&&update.progress>0?' — '+update.progress+'%':'')},check,install,nativeAction('tv-update-cancel','إلغاء مهمة التحديث','cancelUpdate')]},
-        {id:'tv-device-setup',title:nativeSectionTitles['tv-device-setup'],help:'تعرض خطة إعداد الجهاز قبل أي تغيير. إعدادات الجامع والمواقيت مستقلة عنها.',rows:[nativeAction('tv-device-setup-open','فتح تهيئة التلفاز','deviceSetup')]}
-      ];
     }
   };
   function refreshNativePanel(event) {
     if (event && event.type === 'mosque-native-power-result' && event.detail && event.detail.saved === true) powerDraft = null;
-    if (window.MosqueTV && window.MosqueTV.isOpen()) window.MosqueTV.refreshNative();
+    if (window.MosqueTV && window.MosqueTV.isOpen()) window.MosqueTV.refreshNative(event && event.type==='mosque-native-update-result' ? 'tv-update' : 'tv-power');
     if (event && event.detail && event.detail.message) message(String(event.detail.message),event.detail.success===false);
   }
   window.addEventListener('mosque-native-update-result',refreshNativePanel);

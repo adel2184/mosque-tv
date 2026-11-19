@@ -69,12 +69,12 @@ You can pass the path to another Chromium browser as the first argument. The scr
 
 ## Build the Android APK
 
-The current Android build scripts target **Windows**. Use Node.js 24 or 26, JDK 17, Android SDK Platform 35, Build Tools 35.0.0 and PowerShell. With `JAVA_HOME` and `ANDROID_HOME` pointing to those installations, configure the builder from the repository root:
+The Android build runs on **Windows** using Node.js 24 or 26, JDK 17, Android SDK Platform 37.2, Build Tools 37.0.0 and PowerShell. The manifest retains target API 35 and minimum API 24. Set `JAVA_HOME` and `ANDROID_HOME` for these installations and configure the builder from the repository root.
 
 ```powershell
 $env:MOSQUE_JAVA_HOME = $env:JAVA_HOME
-$env:MOSQUE_BUILD_TOOLS = Join-Path $env:ANDROID_HOME 'build-tools/35.0.0'
-$env:MOSQUE_ANDROID_JAR = Join-Path $env:ANDROID_HOME 'platforms/android-35/android.jar'
+$env:MOSQUE_BUILD_TOOLS = Join-Path $env:ANDROID_HOME 'build-tools/37.0.0'
+$env:MOSQUE_ANDROID_JAR = Join-Path $env:ANDROID_HOME 'platforms/android-37.2/android.jar'
 $env:MOSQUE_RELEASE = '1'
 node dev/build.cjs
 node android/build.cjs

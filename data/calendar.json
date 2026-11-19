@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "calendar": "islamic-umalqura",
-  "source": "HijriDate 2.3.0 by Mohammed Alshehri, ummalqura.py MONTH_STARTS (MIT)",
-  "sourceUrl": "https://github.com/dralshehri/hijridate/blob/v2.3.0/src/hijridate/ummalqura.py",
+  "source": "HijriDate 2.6.0 by Mohammed Alshehri, ummalqura.py MONTH_STARTS (MIT)",
+  "sourceUrl": "https://github.com/dralshehri/hijridate/blob/v2.6.0/src/hijridate/ummalqura.py",
   "sourceDocumentation": "https://hijridate.readthedocs.io/en/stable/background.html",
-  "sourceSHA256": "792da6b597f5d85db7f9b71ba835a819a44cb95d9df812679d6d185403c84bb7",
+  "sourceSHA256": "cf5b3758027a72a4ab452b25f996aabd0af99de884ddb72f0f35c2a9c4b94eb5",
   "license": "MIT — licenses/hijridate-MIT.txt",
   "convention": "Saudi civil Umm al-Qura calendar; date changes at midnight Asia/Riyadh, not sunset.",
   "sourceFullRange": [

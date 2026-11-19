@@ -70,7 +70,18 @@ public final class FeedbackActivity extends Activity {
                 String value=request.getUrl().toString();if(value.equals(PAGE)||value.matches("file:///android_asset/reports/[A-Za-z0-9_-]+\\.(?:js|css)"))return null;
                 return new WebResourceResponse("text/plain","UTF-8",403,"Blocked",java.util.Collections.emptyMap(),new ByteArrayInputStream(new byte[0]));
             }
-            @Override public void onPageFinished(WebView view,String url){if(view!=web)return;localPage=PAGE.equals(url)&&!released;if(localPage){view.evaluateJavascript("window.dispatchEvent(new CustomEvent('mosque-report-language',{detail:"+JSONObject.quote(en?"en":"ar")+"}));",null);publishInterrupted();}}
+            @Override public void onPageFinished(WebView view,String url){
+                if(view!=web)return;
+                localPage=PAGE.equals(url)&&!released;
+                if(localPage){
+                    String version="";
+                    try {version=getPackageManager().getPackageInfo(getPackageName(),0).versionName;}
+                    catch(android.content.pm.PackageManager.NameNotFoundException ignored){}
+                    view.evaluateJavascript("document.getElementById('appVersion').value="+JSONObject.quote(version==null?"":version)
+                            +";window.dispatchEvent(new CustomEvent('mosque-report-language',{detail:"+JSONObject.quote(en?"en":"ar")+"}));",null);
+                    publishInterrupted();
+                }
+            }
         });web.loadUrl(PAGE);
     }
     private boolean allowed(){return foreground&&!released&&localPage&&!prayer&&!MainActivity.prayerActive();}
@@ -109,7 +120,7 @@ public final class FeedbackActivity extends Activity {
                 if(!allowed()||ticket!=generation)throw new Exception();
                 http=(HttpURLConnection)new URL(ENDPOINT).openConnection();connection=http;
                 http.setInstanceFollowRedirects(false);http.setConnectTimeout(8000);http.setReadTimeout(12000);http.setRequestMethod("POST");http.setDoOutput(true);http.setUseCaches(false);
-                http.setRequestProperty("Content-Type","application/json; charset=utf-8");http.setRequestProperty("Accept","application/json");http.setRequestProperty("User-Agent","MosqueTV-Report/2.3.0");http.setFixedLengthStreamingMode(bytes.length);
+                http.setRequestProperty("Content-Type","application/json; charset=utf-8");http.setRequestProperty("Accept","application/json");http.setRequestProperty("User-Agent","MosqueTV-Report");http.setFixedLengthStreamingMode(bytes.length);
                 if(!allowed()||ticket!=generation)throw new Exception();try(java.io.OutputStream output=http.getOutputStream()){if(!allowed()||ticket!=generation)throw new Exception();output.write(bytes);}
                 int status=http.getResponseCode();if(status!=200&&status!=201)throw new Exception("HTTP "+status);
                 JSONObject response;try(InputStream input=http.getInputStream()){ByteArrayOutputStream data=new ByteArrayOutputStream();byte[] buffer=new byte[1024];int count;while((count=input.read(buffer))!=-1){if(data.size()+count>4096)throw new Exception();data.write(buffer,0,count);}response=new JSONObject(new String(data.toByteArray(),StandardCharsets.UTF_8));}

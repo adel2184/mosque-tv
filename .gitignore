@@ -1,7 +1,16 @@
 .android-tools/
 .android-signing/
+/output/
+*.p12
+*.pfx
+*.jks
+*.keystore
+.env
+.env.*
+!.env.example
 android/build/
 android/dist/
+/android/*-test-results.json
 research/
 publish/
 *.apk

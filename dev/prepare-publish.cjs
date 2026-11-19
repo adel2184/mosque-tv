@@ -10,6 +10,7 @@ const excluded=/(?:^|\/)(?:build|dist|history|node_modules|\.netlify|\.android-s
 for(const file of tracked.split('\0'))if(file&&!excluded.test(file)&&fs.existsSync(path.join(root,file)))selected.add(file);
 // These named public additions are also needed when preparing a working-tree export before a commit.
 const publicAdditions=['docs/DEVELOPMENT.md','docs/SETUP_EN.md','docs/PROJECT_NOTES_AR.md',
+  'dev/vendor/adhan/adhan.umd.cjs',
   'dev/capture-readme.cjs','dev/preview-file.cjs',
   'dev/prayer-context.js','dev/prayer-display.css','dev/test-prayer-context.cjs',
   'dev/phone-settings.js','dev/test-phone-settings.cjs',

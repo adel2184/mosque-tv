@@ -2,6 +2,16 @@
 // Development-only structural audit of the actual delivered document.
 const fs=require('node:fs'),path=require('node:path');
 const root=path.resolve(__dirname,'..');
+const {createHash}=require('node:crypto');
+// Hashes identify the published upstream UMD and calendar table used offline.
+const setupCalendar=JSON.parse(fs.readFileSync(path.join(root,'data/setup-calendar.json'),'utf8'));
+for(const [file,expected] of [
+  ['dev/vendor/adhan/adhan.umd.cjs','4564a7751a6ad38a10bd5d0e78a5d6c936c20502b95812b2cf2c39e130bb64b2'],
+  ['dev/vendor/hijridate/ummalqura.py',setupCalendar.sourceSHA256]
+]) {
+  const digest=createHash('sha256').update(fs.readFileSync(path.join(root,file))).digest('hex');
+  if(digest!==expected)throw Error('Source provenance mismatch for '+file);
+}
 const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
 let jsonBlocks=0;
 for(const match of html.matchAll(/<script[^>]*type="application\/json"[^>]*>([\s\S]*?)<\/script>/g)){JSON.parse(match[1]);jsonBlocks++;}

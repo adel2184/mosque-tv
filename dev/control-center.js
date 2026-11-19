@@ -29,15 +29,15 @@
   const tx=value=>window.MosqueLocale&&typeof window.MosqueLocale.t==='function'?window.MosqueLocale.t(value):value;
   function localizePanel(){if(window.MosqueLocale&&typeof window.MosqueLocale.translateUI==='function')window.MosqueLocale.translateUI(panel);}
   const defaults=()=>({schemaVersion:1,rows:DEFAULT_ROWS.slice(),lastId:'cc-row-network'});
-  let storageNote='',config=defaults(),nativeStatus={},lastStatusSignature=null,opened=false,view='main',customRows=null,returnFocus=null,closeTimer=0;
+  let storageNote='',config=defaults(),savedConfig=null,nativeStatus={},lastStatusSignature=null,opened=false,view='main',customRows=null,returnFocus=null,closeTimer=0;
   let overlay=null,panel=null,content=null,messageNode=null,footer=null;
   function validate(value){
     if(!value||typeof value!=='object'||Array.isArray(value)||value.schemaVersion!==1||!Array.isArray(value.rows)||value.rows.length<1||value.rows.length>6||value.rows.some(id=>typeof id!=='string'||!ROW_IDS.has(id))||new Set(value.rows).size!==value.rows.length||typeof value.lastId!=='string'||!FOCUS_IDS.has(value.lastId))return null;
     return{schemaVersion:1,rows:value.rows.slice(),lastId:value.lastId};
   }
-  try{const raw=window.localStorage.getItem(STORAGE_KEY);if(raw){const saved=validate(JSON.parse(raw));if(saved)config=saved;else storageNote='استُخدم ترتيب المركز الافتراضي لأن النسخة المحفوظة غير صالحة.';}}
+  try{const raw=window.localStorage.getItem(STORAGE_KEY);if(raw){const saved=validate(JSON.parse(raw));if(saved){config=saved;savedConfig=JSON.stringify(saved);}else storageNote='استُخدم ترتيب المركز الافتراضي لأن النسخة المحفوظة غير صالحة.';}}
   catch(_){storageNote='خيارات المركز تعمل لهذه الجلسة؛ تعذر قراءة الحفظ المحلي.';}
-  function persist(){try{window.localStorage.setItem(STORAGE_KEY,JSON.stringify(config));return true;}catch(_){storageNote='خيارات المركز تعمل لهذه الجلسة فقط؛ تعذر حفظها محليًا.';return false;}}
+  function persist(){const next=JSON.stringify(config);if(next===savedConfig)return true;try{window.localStorage.setItem(STORAGE_KEY,next);savedConfig=next;return true;}catch(_){storageNote='خيارات المركز تعمل لهذه الجلسة فقط؛ تعذر حفظها محليًا.';return false;}}
   function prayerActive(){return Boolean(document.body&&document.body.classList.contains('praying'));}
   function element(tag,className,text){const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=String(text);return node;}
   function statusMessage(text){if(messageNode){messageNode.textContent=tx(text||storageNote);messageNode.hidden=!messageNode.textContent;const active=document.activeElement;if(opened&&panel&&panel.contains(active)&&active.scrollIntoView)active.scrollIntoView({block:'nearest',inline:'nearest'});}}

@@ -1,5 +1,5 @@
 {
-  "source": "https://github.com/dralshehri/hijridate/blob/v2.3.0/src/hijridate/ummalqura.py",
+  "source": "https://github.com/dralshehri/hijridate/blob/v2.6.0/src/hijridate/ummalqura.py",
   "note": "Reference vectors extracted from vendored verified month-start data; independently cross-checked against Node Intl islamic-umalqura, not religious sighting declarations.",
   "fixtures": [
     {

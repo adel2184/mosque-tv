@@ -66,7 +66,7 @@ public final class DeviceSetupActivity extends Activity {
     @Override public void onCreate(Bundle state){
         super.onCreate(state);if(prayerActive){finish();return;}
         active=new WeakReference<>(this);english="en".equals(getSharedPreferences("mosque-tv-setup",0).getString("language","ar"));
-        setup=new DeviceSetup(this);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        setup=new DeviceSetup(this);
         root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(24),dp(12),dp(24),dp(12));root.setBackgroundColor(BG);root.setLayoutDirection(english?View.LAYOUT_DIRECTION_LTR:View.LAYOUT_DIRECTION_RTL);setContentView(root);
         LinearLayout header=horizontal();TextView title=text(tr("تهيئة التلفاز","TV preparation"),23,TEXT);title.setTypeface(Typeface.DEFAULT,Typeface.BOLD);header.addView(title,new LinearLayout.LayoutParams(0,-2,1));
         feedback=button(tr("الإبلاغ عن مشكلة","Report a problem"),"feedback",this::openFeedback);header.addView(feedback);root.addView(header);
@@ -195,7 +195,14 @@ public final class DeviceSetupActivity extends Activity {
                 .replaceAll("أكد الجهاز استعادة (\\d+) عنصرًا إلى حالته الأصلية المسجلة\\. لم تُفعّل عناصر كانت معطّلة قبل استخدام الأداة\\.","The device verified restoration of $1 recorded items. Apps disabled before using this tool were not enabled.");
         return out;
     }
-    @Override protected void onResume(){super.onResume();foreground=true;if(setup!=null&&content!=null&&!busy)draw(null);}
-    @Override protected void onPause(){foreground=false;if(setup!=null&&!busy)setup.disconnect();super.onPause();}
+    @Override protected void onResume(){
+        super.onResume();foreground=true;
+        if(!isFinishing())getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        if(setup!=null&&content!=null&&!busy)draw(null);
+    }
+    @Override protected void onPause(){
+        foreground=false;getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        if(setup!=null&&!busy)setup.disconnect();super.onPause();
+    }
     @Override protected void onDestroy(){released=true;if(confirmation!=null)confirmation.dismiss();if(active.get()==this)active.clear();if(setup!=null&&!busy)setup.disconnect();if(busy)worker.shutdown();else worker.shutdownNow();super.onDestroy();}
 }

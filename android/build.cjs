@@ -9,7 +9,7 @@ const javac=java&&path.join(path.dirname(java),'javac.exe'),keytool=java&&path.j
 const aapt2=process.env.MOSQUE_BUILD_TOOLS?path.join(process.env.MOSQUE_BUILD_TOOLS,'aapt2.exe'):find(path.join(tools,'build-tools'),'aapt2.exe');
 const buildTools=aapt2&&path.dirname(aapt2);
 const androidJar=process.env.MOSQUE_ANDROID_JAR||find(path.join(tools,'platform'),'android.jar');
-if(!java||!aapt2||!androidJar)throw Error('Missing developer Java / Android Build Tools 35 / platform android.jar. See SOURCES_LICENSES.md.');
+if(!java||!aapt2||!androidJar)throw Error('Missing developer Java, Android Build Tools or platform android.jar. See docs/DEVELOPMENT.md.');
 const stamp=new Date().toISOString().replace(/[:.]/g,'-');
 const releaseBuild = process.env.MOSQUE_RELEASE === '1';
 const work=path.join(__dirname,'build',stamp);
@@ -77,12 +77,16 @@ fs.copyFileSync(path.join(__dirname,'device-profiles.json'),path.join(work,'asse
 const profilePackages=[...new Set(deviceProfiles.profiles.flatMap(profile=>profile.packages))];
 if(profilePackages.some(name=>!/^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+$/.test(name)))throw Error('Invalid model package query.');
 const packagedManifest=path.join(work,'AndroidManifest.xml');
-fs.writeFileSync(packagedManifest,fs.readFileSync(path.join(__dirname,'AndroidManifest.xml'),'utf8').replace('</queries>',profilePackages.map(name=>'<package android:name="'+name+'" />').join('\n')+'\n</queries>'));
+const manifest=fs.readFileSync(path.join(__dirname,'AndroidManifest.xml'),'utf8');
+const minSdk=Number(manifest.match(/android:minSdkVersion="(\d+)"/)?.[1]);
+const targetSdk=Number(manifest.match(/android:targetSdkVersion="(\d+)"/)?.[1]);
+if(!Number.isInteger(minSdk)||!Number.isInteger(targetSdk)||minSdk<24||targetSdk<minSdk)throw Error('Invalid SDK versions in AndroidManifest.xml');
+fs.writeFileSync(packagedManifest,manifest.replace('</queries>',profilePackages.map(name=>'<package android:name="'+name+'" />').join('\n')+'\n</queries>'));
 run(aapt2,['compile','--dir',path.join(__dirname,'res'),'-o',path.join(work,'resources.zip')]);
-run(aapt2,['link','-o',path.join(work,'unsigned.apk'),'--manifest',packagedManifest,'-I',androidJar,'--java',path.join(work,'generated'),'-A',path.join(work,'assets'),'--min-sdk-version','24','--target-sdk-version','35',path.join(work,'resources.zip')]);
+run(aapt2,['link','-o',path.join(work,'unsigned.apk'),'--manifest',packagedManifest,'-I',androidJar,'--java',path.join(work,'generated'),'-A',path.join(work,'assets'),path.join(work,'resources.zip')]);
 const bootClasspath=[androidJar,path.join(buildTools,'core-lambda-stubs.jar')].map(file=>path.relative(root,file)).join(path.delimiter);
 run(javac,['-encoding','UTF-8','-source','8','-target','8','-bootclasspath',bootClasspath,'-d',path.join(work,'classes'),...walk(path.join(__dirname,'src'),'.java'),...walk(path.join(__dirname,'vendor/qrcodegen'),'.java'),...walk(path.join(work,'generated'),'.java')]);
-run(java,['-cp',path.join(buildTools,'lib/d8.jar'),'com.android.tools.r8.D8','--min-api','24','--lib',androidJar,'--output',path.join(work,'dex'),...walk(path.join(work,'classes'),'.class')]);
+run(java,['-cp',path.join(buildTools,'lib/d8.jar'),'com.android.tools.r8.D8','--min-api',String(minSdk),'--lib',androidJar,'--output',path.join(work,'dex'),...walk(path.join(work,'classes'),'.class')]);
 // Put DEX at the required ZIP root; preserve the compiled Android resources.
 const jar=path.join(path.dirname(java),'jar.exe');
 run(jar,['uf',path.join(work,'unsigned.apk'),'-C',path.join(work,'dex'),'classes.dex']);
@@ -107,7 +111,9 @@ const verify=run(java,['-jar',path.join(buildTools,'lib/apksigner.jar'),'verify'
 const badging=run(aapt2,['dump','badging',apk]);
 const manifestTree=run(aapt2,['dump','xmltree','--file','AndroidManifest.xml',apk],true);
 const sha=crypto.createHash('sha256').update(fs.readFileSync(apk)).digest('hex');
-const report={builtAt:new Date().toISOString(),apk:'mosque-display-tv.apk',package:'sa.mosque.display',minSdk:24,targetSdk:35,sha256:sha,bytes:fs.statSync(apk).size,sourceIndexSHA256:crypto.createHash('sha256').update(fs.readFileSync(path.join(root,'index.html'))).digest('hex'),signatureVerification:verify.stdout.trim(),badging:badging.stdout.trim(),manifestTree:manifestTree.stdout.trim(),deviceTests:'NOT RUN: no Android TV/emulator connected.',sourceFolder:work};
+const sdkMatches=(key,value)=>new RegExp('^'+key+":'"+value+"'\\s*$",'m').test(badging.stdout);
+if(!sdkMatches('minSdkVersion',minSdk)||!sdkMatches('targetSdkVersion',targetSdk))throw Error('Packaged SDK versions differ from AndroidManifest.xml');
+const report={builtAt:new Date().toISOString(),apk:'mosque-display-tv.apk',package:'sa.mosque.display',minSdk,targetSdk,sha256:sha,bytes:fs.statSync(apk).size,sourceIndexSHA256:crypto.createHash('sha256').update(fs.readFileSync(path.join(root,'index.html'))).digest('hex'),signatureVerification:verify.stdout.trim(),badging:badging.stdout.trim(),manifestTree:manifestTree.stdout.trim(),deviceTests:'Device testing is separate from the build; see the release audit.',sourceFolder:work};
 fs.writeFileSync(path.join(out,'build-report.json'),JSON.stringify(report,null,2));
 fs.writeFileSync(path.join(out,'SHA256SUMS.txt'),sha+'  mosque-display-tv.apk\n');
 console.log('Built signed APK: '+apk+' ('+report.bytes+' bytes)');

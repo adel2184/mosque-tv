@@ -1,6 +1,6 @@
 {
-  "runDate": "2026-11-16",
-  "node": "v24.22.1",
+  "runDate": "2026-11-20",
+  "node": "v26.13.1",
   "targetYear": 2026,
   "totalRecords": 732,
   "yearCounts": {

@@ -60,7 +60,7 @@ function client(language='ar-SA') {
     location:{hash:'#'+'1'.repeat(48),pathname:'/'},history:{replaceState(){}},navigator:{language},
     performance:{now:()=>clock},crypto:require('node:crypto').webcrypto,AbortController,Blob,
     URL:{createObjectURL(blob){downloads.push(blob);return 'blob:phone-'+downloads.length;},revokeObjectURL(url){revoked.push(url);}},
-    confirm:()=>confirmReplies.shift()??false,
+    confirm:()=>confirmReplies.shift()??false,addEventListener:(event,action)=>root.addEventListener(event,action),
     setTimeout(fn,delay){const id=++serial;timers.set(id,{fn,at:clock+delay});return id;},
     clearTimeout(id){timers.delete(id);},
     fetch(url,options){return new Promise((resolve,reject)=>{
@@ -74,7 +74,7 @@ function client(language='ar-SA') {
     return node.children.reduce((a,n)=>{const child=liveCounts(n);return {nodes:a.nodes+child.nodes,listeners:a.listeners+child.listeners};},
       {nodes:1,listeners:Object.values(node.listeners).reduce((n,handlers)=>n+handlers.length,0)});
   }
-  return {$:byId,keys:root.querySelectorAll('[data-key]'),document:sandbox.document,requests,downloads,revoked,confirmReplies,advance,timers,liveCounts,get focus(){return active;}};
+  return {$:byId,keys:root.querySelectorAll('[data-key]'),document:sandbox.document,requests,downloads,revoked,confirmReplies,advance,timers,liveCounts,hide:()=>root.fire('pagehide'),get focus(){return active;}};
 }
 const state = {
   ok:true, revision:1,
@@ -86,7 +86,8 @@ const state = {
 state.backup.mosque.fields.name.value=state.settings.mosqueName;
 
 async function load(c) {
-  c.requests[0].reply(200,{connected:true});await settle();c.$('settings-tab').click();c.requests[1].reply(200,state);await settle();
+  c.requests[0].reply(200,{connected:true,expiresInMs:900000});await settle();c.$('settings-tab').click();
+  c.requests[1].reply(200,{ok:true,revision:state.revision,settings:state.settings});await settle();
 }
 function change(c,id,value){const n=c.$(id);n.value=String(value);n.fire('input');}
 async function assetTests(){
@@ -100,7 +101,7 @@ async function remoteTests() {
   assert(c.$('settings-tab').disabled);assert.match(r[0].options.headers['X-Mosque-Client'],/^[0-9a-f]{32}$/);
   r[0].reply(202,{pending:true,code:'001234'});await settle();assert.equal(c.$('code').textContent,'001234');assert(!c.$('code').hidden);
   c.keys[0].click();c.$('settings-tab').click();assert.equal(r.length,1);
-  await c.advance(2000);r[1].reply(200,{connected:true});await settle();
+  await c.advance(2000);r[1].reply(200,{connected:true,expiresInMs:850000});await settle();
   assert(c.$('code').hidden);assert(c.keys.every(node=>!node.disabled));assert(!c.$('send').disabled);
   c.$('text').value='نص تجريبي';c.$('send').click();assert.equal(r[2].url,'/api/text');assert.equal(JSON.parse(r[2].options.body).text,'نص تجريبي');
   assert.equal(r[2].options.headers['X-Mosque-Client'],r[0].options.headers['X-Mosque-Client']);assert.equal(r[2].options.redirect,'error');assert.equal(r[2].options.credentials,'omit');
@@ -115,7 +116,7 @@ async function editorTests() {
   const c=client('en-GB'),r=c.requests;await load(c);
   assert.equal(r[1].url,'/api/pairing/state');assert.equal(r[1].options.method,'GET');assert.equal(c.document.documentElement.dir,'ltr');
   assert.equal(c.$('apply').textContent,'Save & Apply to TV');assert.equal(c.$('mosqueName').value,state.settings.mosqueName);
-  assert(!c.$('editor-fields').disabled);assert(c.$('apply').disabled);assert.equal(c.timers.size,0);
+  assert(!c.$('editor-fields').disabled);assert(c.$('apply').disabled);assert.equal(c.timers.size,1);
   change(c,'mosqueName','New Mosque');change(c,'neighborhood','North');change(c,'offset-fajr','35');change(c,'jumuahTime','12:30');
   change(c,'prayerModeMinutes','11');change(c,'hourFormat','12');change(c,'dateStyle','hijri');change(c,'postPrayerMinutes','7');
   c.$('silentPhoneReminder').checked=false;c.$('silentPhoneReminder').fire('input');
@@ -131,9 +132,9 @@ async function editorTests() {
     iqamaOffsets:{...state.settings.iqamaOffsets,fajr:35},announcements:[state.settings.announcements[1],{label:'',text:'Lobby closed'}],
     manualOverrides:[{date:'2026-12-04',time:'17:30',prayer:'maghrib'}],silentPhoneReminder:false,postPrayerMinutes:7,hourFormat:12,dateStyle:'hijri'});
   const saved=copy(state);saved.revision=2;saved.settings=submitted.settings;saved.backup.mosque.fields.name.value='New Mosque';
-  r[2].reply(200,saved);await settle();assert.match(c.$('form-status').textContent,/حُفظت/);assert(c.$('apply').disabled);assert.equal(r.length,3);
-  c.$('download').click();assert.equal(r[3].url,'/api/pairing/state');r[3].reply(200,saved);await settle();assert.deepEqual(JSON.parse(await c.downloads[0].text()),saved.backup);
-  await c.advance(1000);assert.equal(c.revoked.length,1);assert.equal(c.timers.size,0);
+  r[2].reply(200,{ok:true,revision:saved.revision,settings:saved.settings});await settle();assert.match(c.$('form-status').textContent,/حُفظت/);assert(c.$('apply').disabled);assert.equal(r.length,3);
+  c.$('download').click();assert.equal(r[3].url,'/api/pairing/state?export=1');r[3].reply(200,saved);await settle();assert.deepEqual(JSON.parse(await c.downloads[0].text()),saved.backup);
+  await c.advance(1000);assert.equal(c.revoked.length,1);assert.equal(c.timers.size,1);
 }
 async function validationTests() {
   const c=client('en'),r=c.requests;await load(c);
@@ -179,7 +180,7 @@ async function largeBackupTests() {
   assert.equal(r[2].url,'/api/pairing/apply-settings');
   assert(Buffer.byteLength(r[2].options.body)>96*1024);
   assert.deepEqual(JSON.parse(r[2].options.body).backup,backup);
-  r[2].reply(200,state);await settle();assert.equal(c.timers.size,0);
+  r[2].reply(200,state);await settle();assert.equal(c.timers.size,1);
 }
 async function lifecycleTests() {
   const c=client(),r=c.requests;await load(c);
@@ -190,11 +191,15 @@ async function lifecycleTests() {
     c.$('add-ann').click();c.$('announcements').children.at(-1).querySelector('[data-action=remove]').click();
     c.$('add-override').click();c.$('overrides').children.at(-1).querySelector('[data-action=remove]').click();
   }
-  assert.deepEqual(c.liveCounts(),counts);assert.equal(c.timers.size,0);assert.equal(r.length,2);
+  assert.deepEqual(c.liveCounts(),counts);assert.equal(c.timers.size,1);assert.equal(r.length,2);
   change(c,'mosqueName','Draft');c.$('download').click();
   const changed=copy(state);changed.revision=2;changed.settings.mosqueName='TV edit';changed.backup.mosque.fields.name.value='TV edit';
   r[2].reply(200,changed);await settle();assert.equal(JSON.parse(await c.downloads[0].text()).mosque.fields.name.value,'TV edit');
   assert.equal(c.$('mosqueName').value,'Draft');assert(c.$('apply').disabled);
-  await c.advance(1000);assert.equal(c.timers.size,0);assert.deepEqual(c.liveCounts(),counts);
+  await c.advance(1000);assert.equal(c.timers.size,1);assert.deepEqual(c.liveCounts(),counts);
+  await c.advance(899000);assert.equal(c.timers.size,0);assert.equal(c.$('mosqueName').value,'');
+  assert.equal(c.$('announcements').children.length,0);assert(c.$('settings-tab').disabled);assert.equal(r.length,3);
+  const leaving=client();await load(leaving);leaving.$('text').value='private note';leaving.hide();
+  assert.equal(leaving.$('text').value,'');assert.equal(leaving.$('mosqueName').value,'');assert.equal(leaving.timers.size,0);
 }
 (async()=>{for(const test of [assetTests,remoteTests,editorTests,validationTests,backupTests,largeBackupTests,lifecycleTests]){await test();console.log('PASS '+test.name);}})().catch(e=>{console.error(e);process.exitCode=1;});

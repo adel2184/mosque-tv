@@ -10,7 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const root = path.resolve(__dirname, '..');
-const adhan = require('./vendor/adhan/package/lib/bundles/adhan.umd.js');
+const adhan = require('./vendor/adhan/adhan.umd.cjs');
 const DAY = 86400000;
 const args = process.argv.slice(2);
 function option(name, fallback) {
@@ -31,7 +31,7 @@ const py = fs.readFileSync(pyPath, 'utf8');
 const block = py.match(/MONTH_STARTS[^=]*=\s*\(([\s\S]*?)\)/);
 if (!block) throw Error('Cannot find source month-start table.');
 const reducedJulianDays = block[1].match(/\d+/g).map(Number);
-if (reducedJulianDays.length !== 1897 || reducedJulianDays[0] !== 23999) throw Error('Unexpected HijriDate 2.3.0 source data.');
+if (reducedJulianDays.length !== 1897 || reducedJulianDays[0] !== 23999) throw Error('Unexpected HijriDate 2.6.0 source data.');
 const allMonths = reducedJulianDays.map((rjd, i) => ({
   start: key((rjd + 2400000 - 2440588) * DAY),
   year: 1343 + Math.floor(i / 12),
@@ -47,8 +47,8 @@ const months = allMonths.slice(firstMonth, finalSentinel + 1);
 const calendar = {
   schemaVersion: 1,
   calendar: 'islamic-umalqura',
-  source: 'HijriDate 2.3.0 by Mohammed Alshehri, ummalqura.py MONTH_STARTS (MIT)',
-  sourceUrl: 'https://github.com/dralshehri/hijridate/blob/v2.3.0/src/hijridate/ummalqura.py',
+  source: 'HijriDate 2.6.0 by Mohammed Alshehri, ummalqura.py MONTH_STARTS (MIT)',
+  sourceUrl: 'https://github.com/dralshehri/hijridate/blob/v2.6.0/src/hijridate/ummalqura.py',
   sourceDocumentation: 'https://hijridate.readthedocs.io/en/stable/background.html',
   sourceSHA256: crypto.createHash('sha256').update(py).digest('hex'),
   license: 'MIT — licenses/hijridate-MIT.txt',
@@ -103,15 +103,15 @@ const timetable = {
     displayStart: `${year}-01-01`,
     displayEnd: `${year + 1}-12-31`,
     boundaryOnly: [key(start), key(end)],
-    source: 'Calculated during development using locally vendored Adhan JS 4.4.3 (Batoul Apps, MIT). Not an official or mosque-approved timetable.',
-    sourceUrl: 'https://github.com/batoulapps/adhan-js/tree/v4.4.3',
+    source: 'Calculated during development using locally vendored Adhan JS 4.4.6 (Batoul Apps, MIT). Not an official or mosque-approved timetable.',
+    sourceUrl: 'https://github.com/batoulapps/adhan-js/tree/v4.4.6',
     generatedOn,
     verificationStatus: 'calculated-needs-review',
     statusArabic: 'مواقيت محسوبة — تحتاج مراجعة',
     calculation: {
-      library: 'Adhan JS 4.4.3', method: 'UmmAlQura', fajrAngle: 18.5,
+      library: 'Adhan JS 4.4.6', method: 'UmmAlQura', fajrAngle: 18.5,
       asrShadowFactor: 1, ishaMinutesOutsideRamadan: 90, ishaMinutesRamadan: 120,
-      ramadanCalendar: 'HijriDate 2.3.0 verified Umm al-Qura month-start table',
+      ramadanCalendar: 'HijriDate 2.6.0 verified Umm al-Qura month-start table',
       ramadanRule: 'Set ishaInterval to 120 only on Saudi civil Ramadan dates; no separate +30 minute adjustment.',
       adjustmentsMinutes: { fajr: 0, sunrise: 0, dhuhr: 0, asr: 0, maghrib: 0, isha: 0 },
       rounding: 'Nearest whole minute; seconds >= 30 round upward (Adhan Rounding.Nearest).',
