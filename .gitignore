@@ -1,13 +1,34 @@
-.android-tools/
+# Local credentials and Android signing material
 .android-signing/
-/output/
+.env*
 *.p12
 *.pfx
+*.pkcs12
 *.jks
 *.keystore
-.env
-.env.*
-!.env.example
+*.key
+*.pem
+*.p8
+keystore.properties
+key.properties
+password.txt
+google-services.json
+service-account*.json
+service_account*.json
+*-firebase-adminsdk-*.json
+application_default_credentials.json
+
+# Settings and timetable files exported by a mosque
+mosque-settings*.json
+mosque-prayer-timetable*.json
+mosque-export*.json
+*backup*.json
+**/backup/**/*.json
+**/backups/**/*.json
+
+# Build outputs and developer tools
+output/
+.android-tools/
 android/build/
 android/dist/
 /android/*-test-results.json
