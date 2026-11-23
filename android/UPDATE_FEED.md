@@ -8,19 +8,19 @@ Set them to the public GitHub repository that publishes this app. The updater re
 non-draft, non-prerelease release. `metadataAsset` defaults to `update.json`.
 
 Attach `update.json`, `mosque-display-tv.apk` and `SHA256SUMS.txt` to the same
-stable GitHub Release. The v2.5.1 feed generated from the signed APK is
+stable GitHub Release. The v2.5.2 feed generated from the signed APK is
 
 ```json
 {
   "schemaVersion": 1,
   "packageName": "sa.mosque.display",
-  "versionName": "2.5.1",
-  "versionCode": 15,
+  "versionName": "2.5.2",
+  "versionCode": 17,
   "minSdk": 24,
   "apk": {
     "name": "mosque-display-tv.apk",
-    "size": 1649258,
-    "sha256": "e0b6cce341cc9b725a71bb79629bbc9d2acab1529d0a63a9691484e1c8aa5fa4"
+    "size": 1657450,
+    "sha256": "004b0c5cefca889edd4c9e6aa9e7a5e44cf9dcb65d79129c986b2e849c53ec81"
   }
 }
 ```

@@ -77,6 +77,21 @@ function focusInside(app){const node=app.document.activeElement;assert(app.get('
 test('The actual module performs no catalog read, load, preparation, import, phone RPC, or save until explicitly opened',()=>{
   const app=runtime();eq(app.calls.length,0);eq(app.wizard.isOpen(),false);eq(app.get('mosqueSetupDialog'),null);app.open();same(app.calls.map(call=>call[0]),['catalog','load']);eq(mutations(app).length,0);eq(app.wizard.getState().step,0);eq(app.get('mosqueSetupDialog').dir,'rtl');eq(app.document.activeElement.id,'setupLanguageAr');
 });
+test('Reopening setup keeps reviewed coordinates and timezone until an operator explicitly selects a current city',async()=>{
+  const catalog=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/location-catalog.json'),'utf8'));
+  const countryId='BD',cityId='7683974',prior={...baseProfile(),countryId,cityId,latitude:23.74,longitude:90.385,timezone:'UTC'};
+  const app=runtime({catalog,profile:prior});app.open();app.review();await app.prepare();app.click('setupNext');await app.settle();
+  same(app.saved[0].profile,app.calls.find(call=>call[0]==='prepare')[1]);eq(app.saved[0].profile.latitude,23.74);eq(app.saved[0].profile.longitude,90.385);eq(app.saved[0].profile.timezone,'UTC');
+  const changed=runtime({catalog,profile:prior});changed.open();changed.click('setupNext');changed.click('setupCity');changed.type('setupSearchInput','Dhanmondi');changed.choose(cityId);
+  const selected=changed.wizard.getState().profile;eq(selected.latitude,23.742);eq(selected.longitude,90.369);eq(selected.timezone,'Asia/Dhaka');
+});
+test('Retired locations remain named and usable on existing installations and unavailable for new selections',async()=>{
+  const catalog=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/location-catalog.json'),'utf8'));
+  const prior={...baseProfile(),countryId:'IN',cityId:'1254745',latitude:10.01115,longitude:77.47772,timezone:'Asia/Kolkata'};
+  const app=runtime({catalog,profile:prior});app.open();app.click('setupNext');assert(app.get('setupCity').textContent.includes('Teni'));
+  app.click('setupCity');app.type('setupSearchInput',prior.cityId);eq(app.get('setupPickerResults').querySelectorAll('button').length,0);app.back();
+  for(let i=1;i<5;i++)app.click('setupNext');await app.prepare();app.click('setupNext');await app.settle();eq(app.saved[0].profile.cityId,prior.cityId);eq(app.saved[0].profile.timezone,prior.timezone);
+});
 test('Arabic/English switching updates the six-step UI and its remote direction without preparing or saving',()=>{
   const app=runtime();app.open();app.key('ArrowLeft');eq(app.document.activeElement.id,'setupLanguageEn');app.click('setupLanguageEn');eq(app.get('mosqueSetupDialog').lang,'en');eq(app.get('mosqueSetupDialog').dir,'ltr');assert(app.get('mosqueSetupDialog').textContent.includes('Set up the mosque display'));app.key('ArrowLeft');eq(app.document.activeElement.id,'setupLanguageAr');app.click('setupLanguageAr');eq(app.get('mosqueSetupDialog').dir,'rtl');eq(mutations(app).length,0);
 });

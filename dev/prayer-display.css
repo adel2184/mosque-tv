@@ -33,14 +33,36 @@
   line-height: 1.5;
 }
 #phoneReminder { padding: 9px 14px; margin: 14px 22px 0; font-size: 25px; }
-#rowsPhoneReminder, #rowsKhutbah {
+#rowsPhoneReminder {
   position: absolute;
   max-width: 89vw;
   font-size: min(3.5vw, 5vh);
   line-height: 1.45;
+  bottom: 4vh;
+  padding: 0.15em 0.9em;
 }
-#rowsPhoneReminder { bottom: 4vh; padding: 0.15em 0.9em; }
-#rowsKhutbah { top: 3.5vh; color: #e4c98f; }
+
+body.listening { background: #000; }
+.listening #stage > *, .listening .topbar > * { visibility: hidden; }
+.listening #stage > #khutbahDisplay,
+.listening:not(.idle) #settingsButton, .listening #settingsButton:focus-visible { visibility: visible; }
+#khutbahDisplay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  color: #f3ead4;
+  text-align: center;
+}
+#khutbahText {
+  max-width: 1350px;
+  margin: 0;
+  font-size: 150px;
+  font-weight: 600;
+  line-height: 1.6;
+}
 
 #postPrayerDisplay {
   flex: 1;
@@ -71,6 +93,13 @@
 #postPrayerText { margin: 0; font-size: 78px; font-weight: 500; line-height: 1.85; white-space: pre-line; }
 #postPrayerText.long-dhikr { font-size: 54px; line-height: 1.85; }
 #postPrayerNote { margin: 20px 0 0; color: #cfdbc9; font-size: 30px; line-height: 1.55; }
+#postPrayerDisplay.friday-adhkar #postPrayerText {
+  font-size: 88px;
+  font-weight: 600;
+  line-height: 1.7;
+  color: #fffaeb;
+}
+#postPrayerDisplay.friday-adhkar #postPrayerText.long-dhikr { font-size: 72px; }
 
 .mosque-ticker.contextual { min-height: 86px; height: 86px; }
 .mosque-ticker.contextual::before, .mosque-ticker.contextual::after { display: none; }
@@ -95,21 +124,6 @@
 #visitLabel { color: #d2bb82; font-size: 24px; font-weight: 600; }
 #visitText { color: #f7edd0; font-size: 35px; line-height: 1.45; }
 #exitReminder { padding-inline-start: 24px; border-inline-start: 1px solid #577056; color: #d0daca; font-size: 22px; line-height: 1.45; }
-#fridayReminders {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0 30px;
-  color: #ebdcaf;
-  font-size: 29px;
-  line-height: 1.45;
-}
-#visitReminder:not([hidden]) + #fridayReminders {
-  display: grid;
-  border-inline-start: 1px solid #577056;
-  padding-inline-start: 30px;
-  font-size: 24px;
-}
 
 /* The editor fills the dialog. Its initial focus should lay out only the editor. */
 .tv-editor { contain: strict; }

@@ -12,7 +12,7 @@
     NorthAmerica:{fajrAngle:15,ishaAngle:15,ishaMinutesOutsideRamadan:null,ishaMinutesRamadan:null,dhuhrAdjustment:1},
     Karachi:{fajrAngle:18,ishaAngle:18,ishaMinutesOutsideRamadan:null,ishaMinutesRamadan:null,dhuhrAdjustment:1}
   };
-  const formatters=new Map(),zones=new Map(),offsetCandidates=new Map();
+  const formatters=new Map(),zones=new Map(),offsetCandidates=new Map(),recentOffsetSamples=new Map();
   const copy=value=>JSON.parse(JSON.stringify(value)),pad=value=>String(value).padStart(2,'0');
   function fail(code,message){const error=new Error(message);error.code=code;throw error;}
   function boundedCache(cache,key,value,limit){if(cache.size>=limit)cache.delete(cache.keys().next().value);cache.set(key,value);return value;}
@@ -44,7 +44,14 @@
   }
   function keyOf(parts){return String(parts.year).padStart(4,'0')+'-'+pad(parts.month)+'-'+pad(parts.day);}
   function dateKey(ms,zone){return requireDate(keyOf(wallParts(ms,zone)));}
-  function offsetMillis(ms,zone){const p=wallParts(ms,zone);return Date.parse(keyOf(p)+'T'+pad(p.hour)+':'+pad(p.minute)+':'+pad(p.second)+'Z')-Math.floor(ms/1000)*1000;}
+  function offsetMillis(ms,zone){
+    // Consecutive timetable dates probe overlapping UTC instants around local noon.
+    const key=zone+'|'+ms;
+    if(recentOffsetSamples.has(key))return recentOffsetSamples.get(key);
+    const p=wallParts(ms,zone);
+    const offset=Date.parse(keyOf(p)+'T'+pad(p.hour)+':'+pad(p.minute)+':'+pad(p.second)+'Z')-Math.floor(ms/1000)*1000;
+    return boundedCache(recentOffsetSamples,key,offset,64);
+  }
   function timestamp(key,time,zone){
     requireDate(key);if(typeof time!=='string'||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))fail('INVALID_TIME','Use HH:mm in the 24-hour clock.');
     zoneFormatter(zone);const naive=Date.parse(key+'T'+time+':00Z'),cacheKey=zone+'|'+key;
@@ -70,8 +77,11 @@
       const country=countries.find(item=>item&&item.id===countryId),city=country&&Array.isArray(country.cities)&&country.cities.find(item=>item&&String(item.id)===cityId);
       if(!city)fail('INVALID_CITY','The selected city does not belong to the selected country.');
       const latitude=coordinate(city.latitude,-89,89,'City latitude'),longitude=coordinate(city.longitude,-180,180,'City longitude');
-      if(Math.abs(latitude-output.latitude)>0.00001||Math.abs(longitude-output.longitude)>0.00001)fail('CITY_COORDINATE_MISMATCH','Coordinates must match the selected catalog city.');
-      output.latitude=latitude;output.longitude=longitude;
+      if(Math.abs(latitude-output.latitude)<=0.00001&&Math.abs(longitude-output.longitude)<=0.00001){
+        output.latitude=latitude;output.longitude=longitude;
+      }else if(!city.previousCoordinates?.some(point=>point.latitude===output.latitude&&point.longitude===output.longitude)){
+        fail('CITY_COORDINATE_MISMATCH','Coordinates must match the selected catalog city.');
+      }
       // The operator may deliberately choose a zone different from the city default.
     }
     return output;

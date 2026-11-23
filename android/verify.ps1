@@ -39,7 +39,9 @@ try {
   $deviceProfilesHash = Byte-Hash $deviceProfilesBytes
   if ($deviceProfilesHash -ne (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'device-profiles.json') -Algorithm SHA256).Hash.ToLowerInvariant()) { throw 'Model catalogue changed in APK.' }
   $deviceProfiles = [System.Text.Encoding]::UTF8.GetString($deviceProfilesBytes) | ConvertFrom-Json
-  if ($deviceProfiles.profiles.Count -ne 416 -or $deviceProfiles.source.commit -ne '3cd274f866b71ec15e4f7d8c796514b0baa8033c') { throw 'Pinned community model source mismatch.' }
+  if ($deviceProfiles.schemaVersion -ne 2 -or $deviceProfiles.profiles.Count -ne 508 -or
+      $deviceProfiles.source.commit -ne 'fe6cdcefa817da9f6facd3a17a3c5a086124f258' -or
+      $deviceProfiles.source.baselineCommit -ne '3cd274f866b71ec15e4f7d8c796514b0baa8033c') { throw 'Pinned community model source mismatch.' }
   foreach ($file in @('index.html','report-form.js','report-schema.js','report.css')) {
     if ((Byte-Hash (Read-ApkBytes ('assets/reports/' + $file))) -ne (Get-FileHash -LiteralPath (Join-Path $projectRoot ('services/reports/public/' + $file)) -Algorithm SHA256).Hash.ToLowerInvariant()) { throw "Report UI differs from source: $file" }
   }
@@ -70,10 +72,14 @@ try {
   }
   if (Compare-Object -CaseSensitive ($scriptPolicy -split '\s+') $expectedSources) { throw 'Script policy does not match trusted scripts in the signed APK.' }
   $sourceHtml = Get-Content -LiteralPath (Join-Path $projectRoot 'index.html') -Raw -Encoding UTF8
-  $pattern = '<script id="application-code">([\s\S]*?)</script>'
-  if ([regex]::Match($packedHtml,$pattern).Groups[1].Value -cne [regex]::Match($sourceHtml,$pattern).Groups[1].Value) { throw 'Core application code changed while packaging.' }
-  $packedBridge = [regex]::Match($packedHtml,'<script id="android-tv-bridge">([\s\S]*?)</script>').Groups[1].Value.Trim()
-  if ($packedBridge -cne (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'tv-bridge.js') -Raw -Encoding UTF8).Trim()) { throw 'TV bridge differs from its tested source.' }
+  # The packager adds exactly two blocks. Verify all other HTML, data, styles and scripts together.
+  $bridge = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'tv-bridge.js') -Raw -Encoding UTF8
+  $bridgeBlock = '<script id="android-tv-bridge">' + "`n" + $bridge + "`n</script>`n"
+  $expectedPolicy = "script-src " + ($expectedSources -join ' ') + "; worker-src blob:; child-src blob:"
+  $policyBlock = "`n" + '<meta http-equiv="Content-Security-Policy" content="' + $expectedPolicy + '">'
+  $expectedHtml = $sourceHtml.Insert($sourceHtml.IndexOf('<script id="application-code">',[StringComparison]::Ordinal), $bridgeBlock)
+  $expectedHtml = $expectedHtml.Insert($expectedHtml.IndexOf('<head>',[StringComparison]::Ordinal) + 6, $policyBlock)
+  if (-not [string]::Equals($packedHtml,$expectedHtml,[StringComparison]::Ordinal)) { throw 'Packaged display differs from the complete reviewed HTML, bridge or script policy.' }
   if ((Byte-Hash (Read-ApkBytes 'assets/web/ANDROID_SOURCES_LICENSES.md')) -ne (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'SOURCES_LICENSES.md') -Algorithm SHA256).Hash.ToLowerInvariant()) { throw 'APK license/source notes are stale.' }
   $jsonCount = 0
   $data = @{}
@@ -90,6 +96,11 @@ try {
   }
   if ($data['config-data'].silentPhoneReminder -ne $true -or $data['config-data'].postPrayerMinutes -ne 5) {
     throw 'Unexpected prayer reminder defaults in APK.'
+  }
+  $friday = $data['config-data'].fridayProgram
+  if ($packagedGuide.fridayAdhkar.Count -ne 9 -or $packagedGuide.khutbah -cne 'الرجاء إغلاق الجوال والإنصات للخطبة' -or
+      $friday.enabled -ne $true -or $null -ne $friday.startTime -or $friday.noticeTime -ne '11:00' -or $friday.cardSeconds -ne 30) {
+    throw 'Friday display content or sunrise-to-11-AM defaults are missing from APK.'
   }
   $setupCalendar = $data['setup-calendar-data']
   if ($setupCalendar.rangeStart -ne '1924-08-01' -or $setupCalendar.rangeEnd -ne '2077-11-16' -or $setupCalendar.months.Count -ne 1897) { throw 'Complete local setup calendar missing.' }
@@ -118,6 +129,7 @@ try {
     entryCount = $names.Count; minSdk = $build.minSdk; targetSdk = $build.targetSdk; versionName = $versionName; versionCode = $versionCode; tvLauncher = $true; homeCandidate = $true
     requestedPermissions = $permissions; updateRepository = 'adel2184/mosque-tv'; signatureV2 = $true; signatureV3 = $true; originalSigningIdentity = $true; coreScriptUnchanged = $true; tvBridgeMatchesSource = $true
     packagedScriptHashes = $expectedSources.Count - 1; phonePageMatchesSource = $true; phonePageSHA256 = $phonePageHash; phonePageBytes = $phonePage.Length; pairedSettingsRoutes = 2; postPrayerCards = $packagedGuide.postPrayer.Count
+    fridayCards = $packagedGuide.fridayAdhkar.Count; fridayNoticeTime = $friday.noticeTime
     embeddedJsonBlocks = $jsonCount; prayerRecords = 732; adhkar = $enabled.Count; originalQrSHA256 = $qrHash
     locationCatalogSHA256 = $catalogHash; setupCalendarStart = $setupCalendar.rangeStart; setupCalendarEnd = $setupCalendar.rangeEnd; setupCalendarMonthStarts = $setupCalendar.months.Count
     communityProfiles = $deviceProfiles.profiles.Count; communityProfilesSHA256 = $deviceProfilesHash; localReportAssetsMatch = $true; reportReceiver = 'https://mosque-tv-reports-adel2184.netlify.app/api/reports'

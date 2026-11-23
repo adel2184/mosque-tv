@@ -47,7 +47,7 @@ node optimize/share.cjs --send "PATH_PRINTED_BY_PREVIEW" --confirm
 
 ## التشغيل والنشر
 
-من مجلد `services/reports` ثبّت الاعتماد المثبت `@netlify/blobs11.1.9` ثم انشر عبر مشروع Netlify الخاص بالمالك. مجلد النشر `public` والدوال `netlify/functions`، وتبقى مصادر الدوال خارج الملفات العامة. مجلد `.netlify` وnode_modules متجاهلان محليًا. لا يلزم رمز API في المتصفح أو APK أو CLI.
+من مجلد `services/reports` ثبّت الاعتماد المثبت `@netlify/blobs@11.1.10` ثم انشر عبر مشروع Netlify الخاص بالمالك. مجلد النشر `public` والدوال `netlify/functions`، وتبقى مصادر الدوال خارج الملفات العامة. مجلد `.netlify` وnode_modules متجاهلان محليًا. لا يلزم رمز API في المتصفح أو APK أو CLI.
 
 تستخدم الدالة متجر `reports-production` الدائم فقط عندما يقرر سياق Netlify أن النشر production وpublished=true. أي سياق آخر يستخدم `getDeployStore` باسم `reports-testing` المعزول؛ لا تختبر الكتابة في مخزن الإنتاج. تقرأ الدالة تقاريرها داخليًا فقط للتحقق من تكرار nonce، ولا تعيد محتواها للعامة. يقرأ المالك التقارير ويحذفها من **Data & Storage → Blobs** في لوحة Netlify. لا تستخدم رابط Blob عامًا.
 

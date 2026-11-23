@@ -143,7 +143,10 @@ public final class DeviceSetupActivity extends Activity {
         readable(tr("تطبيقات مسجلة: ","Recorded apps: ")+packages+"\n"+tr("إعدادات حركة مسجلة: ","Recorded animation settings: ")+animations+"\n"+tr("تعود العناصر إلى حالتها الأصلية المسجلة، دون تغيير إعدادات واجهة البدء التي سبق ضبطها خارج هذه الأداة. تنظيف المؤقت ليس قابلًا للاستعادة.","Items return to their recorded original state. Home-app changes made outside this tool are preserved. Cache cleanup cannot be undone."),"read:restore");
         pageAction(button(tr("استعادة كل تغييرات هذه الأداة","Restore all of this tool's changes"),"action:restore-all",()->confirm(tr("استعادة تغييرات هذه الأداة؟","Restore this tool's changes?"),tr("ستُستعاد حالات التطبيقات وإعدادات الحركة الموجودة في سجل الأداة فقط إلى قيمها الأصلية المسجلة. لن تُفعّل واجهة بدء أو تطبيقًا كان معطّلًا قبل استخدام الأداة.","Only recorded app states and animation settings will return to their original values. A Home app or other app disabled before using this tool will not be enabled."),tr("استعادة الكل","Restore all"),()->setup.restoreAll())),setup.connected()&&packages+animations>0&&setup.journalWarning().isEmpty());
         if(animations>0)pageAction(button(tr("استعادة إعدادات الحركة فقط","Restore animations only"),"action:restore-animations",()->confirm(tr("استعادة الحركة؟","Restore animations?"),tr("ستُعاد قيم الحركة المسجلة فقط.","Only recorded animation values will be restored."),tr("استعادة","Restore"),()->setup.restoreAnimations())),setup.connected()&&setup.journalWarning().isEmpty());
-        for(DeviceSetup.Row candidate:setup.rows())if(setup.recorded(candidate.name)){String title=nativeCopy(candidate.title);pageAction(button(tr("استعادة: ","Restore: ")+title,"app:"+candidate.name+":restore",()->confirmPackage(candidate.name,title)),setup.connected()&&setup.journalWarning().isEmpty());}
+        for(String name:setup.recordedPackages()){
+            String title=nativeCopy(setup.recordedTitle(name));
+            pageAction(button(tr("استعادة: ","Restore: ")+title,"app:"+name+":restore",()->confirmPackage(name,title)),setup.connected()&&setup.journalWarning().isEmpty());
+        }
         if(packages+animations==0)readable(tr("لا توجد تغييرات مسجلة لاستعادتها.","There are no recorded changes to restore."),"read:restore-empty");
     }
     private void confirmApply(){
@@ -165,7 +168,7 @@ public final class DeviceSetupActivity extends Activity {
     private void requestExit(){if(busy){busyNotice();return;}finish();}
     @Override public void onBackPressed(){if(busy){busyNotice();return;}super.onBackPressed();}
     private void openAppSettings(String name){
-        if(busy||prayerActive||!DeviceSetup.allowed(name))return;
+        if(busy||prayerActive||!setup.allowed(name))return;
         try{startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+name)));show(tr("فُتحت إعدادات التطبيق. عُد وحدّث الحالة للتحقق من أي تغيير يدوي.","App settings opened. Return and refresh to verify any manual change."),false);}
         catch(ActivityNotFoundException|SecurityException error){show(tr("تعذر فتح إعدادات هذا التطبيق؛ راجعه من إعدادات التلفاز.","This app's settings could not open. Use the TV's app settings."),true);}
     }
@@ -174,7 +177,10 @@ public final class DeviceSetupActivity extends Activity {
         if(value==null)return "";String out=value.replace("COMMUNITY_PROFILE: AMBIGUOUS_VARIANT",tr("قائمة الموديل: توجد نسخ مختلفة بهذا الاسم؛ لم تُطبّق قائمة مجتمعية.","Model list: this name has multiple variants. No community list was applied."))
                 .replace("COMMUNITY_PROFILE: OEM_CONFLICT",tr("قائمة الموديل: تختلف بيانات الشركة؛ يلزم التحقق اليدوي.","Model list: manufacturer data conflicts. Manual review is required."))
                 .replace("COMMUNITY_PROFILE: NO_EXACT_MODEL",tr("قائمة الموديل: لا توجد مطابقة تامة؛ المقترحات الأساسية فقط.","Model list: no exact match. Only the built-in suggestions are available."))
+                .replace("COMMUNITY_PROFILE: AMBIGUOUS_MODEL",tr("يتطابق اسم الموديل مع أكثر من سجل. تتوفر المقترحات الأساسية فقط.","Multiple records match the model. Only built-in suggestions are available."))
+                .replace("COMMUNITY_PROFILE: MISSING_PROFILE_ANDROID_VERSION",tr("تعذّر تحديد إصدار Android واحد لهذا الطراز. تتوفر المقترحات الأساسية فقط.","The model record has no single Android version. Only built-in suggestions are available."))
                 .replace("COMMUNITY_PROFILE: ANDROID_VERSION_MISMATCH",tr("قائمة الموديل: يختلف إصدار Android؛ لم تُطبّق القائمة المجتمعية.","Model list: Android versions differ. No community list was applied."))
+                .replace("MODEL_IDENTIFICATION_ONLY",tr("تطابق الموديل وإصدار Android. تتوفر المقترحات الأساسية فقط.","Exact model and Android version. Only built-in suggestions are available."))
                 .replace("COMMUNITY_PROFILE: ",tr("القائمة المجتمعية: ","Community model list: ")).replace("EXACT_MODEL_AND_VERSION",tr("تطابق الموديل وإصدار Android","Exact model and Android version"))
                 .replace("UPDATE_CACHE_PRESENT",tr("ملف تحديث محفوظ: التنظيف متوقف لحمايته؛ ثبّت التحديث أو ألغِ مهمته أولًا.","A cached update is present. Cleanup is blocked to protect it; install or cancel the update first."))
                 .replace("LOW_STORAGE",tr("المساحة منخفضة","Storage is low")).replace("SPACE_OK",tr("المساحة كافية","Enough free space")).replace("CACHE_REQUEST_CONFIRMED",tr("أكد Android طلب إخلاء المؤقت","Android confirmed the cache-cleanup request")).replace("PACKAGE_RESTORED",tr("استعيدت حالة التطبيق","App state restored"))

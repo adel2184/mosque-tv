@@ -37,21 +37,39 @@ module.exports={runtime,cityProfile,table,defaults,legacyTable,INSTALL,OLD_SETTI
 if(require.main===module){
 test('An existing legacy installation keeps both original keys and all saved values without forcing setup or rewriting on boot',()=>{
   const settings=clone(defaults);settings.iqama.offsets.fajr=26;settings.mosque.fields.name.value='Existing Mosque';
-  delete settings.adhanAdjustments;delete settings.silentPhoneReminder;delete settings.postPrayerMinutes;
+  delete settings.adhanAdjustments;delete settings.silentPhoneReminder;delete settings.postPrayerMinutes;delete settings.fridayProgram;
   const raw=JSON.stringify(settings),storage=new Map([[OLD_SETTINGS,raw],[OLD_TABLE,legacyTable]]),app=runtime({storage});const context=app.window.MosqueInstall.getContext();eq(context.required,false);eq(context.hasInstallation,false);eq(context.settings.iqama.offsets.fajr,26);eq(context.settings.mosque.fields.name.value,'Existing Mosque');eq(app.api.database.metadata.city,'الدمام');eq(storage.get(OLD_SETTINGS),raw);eq(storage.get(OLD_TABLE),legacyTable);eq(app.writes.length,0);eq(storage.has(INSTALL),false);
   eq(context.settings.silentPhoneReminder,true);eq(context.settings.postPrayerMinutes,5);
+  same(context.settings.fridayProgram,defaults.fridayProgram);
 });
 test('A native legacy-upgrade signal preserves the old dashboard while a genuinely fresh install requires setup and no Dammam timetable',()=>{
   const upgraded=runtime({native:{setupStatus:()=>JSON.stringify({legacyUpgrade:true})}});eq(upgraded.window.MosqueInstall.getContext().required,false);assert(upgraded.api.database);const fresh=runtime(),context=fresh.window.MosqueInstall.getContext();eq(context.required,true);eq(context.hasInstallation,false);eq(context.profile,null);eq(fresh.api.database,null);eq(fresh.api.getState().phase,'UNAVAILABLE');eq(context.settings.donation.visible,false);eq(context.settings.mosque.enabled,false);eq(fresh.storage.size,0);
 });
-test('A v2.3.3 profile and JSON backup acquire both display defaults without a wizard or writes, then round-trip explicit Off values',()=>{
-  const older=clone(defaults);delete older.silentPhoneReminder;delete older.postPrayerMinutes;
+test('Upgrading a retired city, old city coordinates, or a changed default timezone keeps the saved operational timetable',()=>{
+  const profiles=[
+    cityProfile('IN','Teni'),cityProfile('BD','Dhanmondi',{latitude:23.74,longitude:90.385}),
+    cityProfile('CN','Huocheng',{cityId:'11694038',latitude:44.05305,longitude:80.87173,timezone:'Asia/Urumqi'})
+  ];
+  for(const profile of profiles){
+    const timetable=table(profile),settings=clone(defaults);settings.mosque.fields.name.value=profile.mosqueName;
+    const raw=JSON.stringify({schemaVersion:1,completedAt:'2026-11-18T08:00:00.000Z',settings,profile,timetable});
+    const storage=new Map([[INSTALL,raw]]),app=runtime({storage}),context=app.window.MosqueInstall.getContext();
+    eq(context.required,false);eq(context.hasInstallation,true);same(context.profile,profile);same(app.api.database.records,timetable.records);
+    eq(app.writes.length,0);eq(storage.get(INSTALL),raw);
+  }
+});
+test('A v2.3.3 profile and JSON backup acquire display defaults and round-trip Friday settings and explicit Off values',()=>{
+  const older=clone(defaults);delete older.silentPhoneReminder;delete older.postPrayerMinutes;delete older.fridayProgram;
   older.mosque.fields.name.value=newYork.mosqueName;older.iqama.offsets.fajr=27;
   const savedTable=table(newYork),snapshot={schemaVersion:1,completedAt:'2026-11-16T08:00:00.000Z',profile:newYork,settings:older,timetable:savedTable};
+  savedTable.metadata.calculation.library='Adhan JS 4.4.3';
+  savedTable.metadata.sourceUrl='https://github.com/batoulapps/adhan-js/tree/v4.4.3';
   const before=JSON.stringify(snapshot),storage=new Map([[INSTALL,before],[OLD_SETTINGS,JSON.stringify(older)]]);
   const app=runtime({storage});const context=app.window.MosqueInstall.getContext();
   eq(context.required,false);eq(context.hasInstallation,true);same(context.profile,newYork);eq(context.settings.silentPhoneReminder,true);eq(context.settings.postPrayerMinutes,5);
   eq(context.settings.iqama.offsets.fajr,27);eq(storage.get(INSTALL),before);eq(app.writes.length,0);
+  eq(app.api.database.metadata.calculation.library,'Adhan JS 4.4.3');
+  same(app.api.database.records,savedTable.records);
   app.api.openSettings();
   function importBackup(settings){
     const file=app.document.getElementById('settingsFile'),content=JSON.stringify(settings);
@@ -59,22 +77,76 @@ test('A v2.3.3 profile and JSON backup acquire both display defaults without a w
   }
   function exportBackup(){app.document.getElementById('exportSettingsButton').click();return JSON.parse(app.downloads.at(-1).textContent);}
   importBackup(older);const migrated=exportBackup();eq(migrated.silentPhoneReminder,true);eq(migrated.postPrayerMinutes,5);
-  importBackup({...migrated,silentPhoneReminder:false,postPrayerMinutes:0});const chosen=exportBackup();
+  same(migrated.fridayProgram,defaults.fridayProgram);
+  const friday={enabled:true,startTime:'07:15',noticeTime:'11:30',cardSeconds:45,prayerMinutes:12};
+  importBackup({...migrated,silentPhoneReminder:false,postPrayerMinutes:0,fridayProgram:friday});const chosen=exportBackup();
+  same(chosen.fridayProgram,friday);
   eq(chosen.silentPhoneReminder,false);eq(chosen.postPrayerMinutes,0);
   for(const bad of [{postPrayerMinutes:'5'},{postPrayerMinutes:4},{postPrayerMinutes:null},{silentPhoneReminder:1},{silentPhoneReminder:null}]){
     importBackup({...chosen,...bad});same(exportBackup(),chosen);
   }
   for(const minutes of [0,3,5,7])eq(app.api.validateSettings({...chosen,postPrayerMinutes:minutes}).postPrayerMinutes,minutes);
+  for(const invalid of [null,{...friday,enabled:'yes'},{...friday,startTime:7},{...friday,startTime:'24:00'},{...friday,startTime:'11:30'},{...friday,noticeTime:'11:60'},{...friday,cardSeconds:0},{...friday,prayerMinutes:61}]){
+    importBackup({...chosen,fridayProgram:invalid});same(exportBackup(),chosen);
+  }
   eq(storage.get(INSTALL),before);app.document.getElementById('saveButton').click();
   const reloaded=runtime({storage}).window.MosqueInstall.getContext();
   eq(reloaded.required,false);same(reloaded.profile,newYork);eq(reloaded.settings.silentPhoneReminder,false);eq(reloaded.settings.postPrayerMinutes,0);
+  same(reloaded.settings.fridayProgram,friday);
+  const iqama={...chosen.iqama,overrides:[
+    {id:'weekly-friday',prayer:'dhuhr',kind:'weekday',match:'5',time:'13:15',label:''},
+    {id:'override-friday',prayer:'dhuhr',kind:'date',match:'2026-11-20',time:'13:22',label:''}
+  ]};
+  const events=app.api.buildEvents(app.api.validateTimetable(savedTable),{...chosen,iqama});
+  const jumua=events.find(event=>event.id==='2026-11-20/dhuhr'),ordinary=events.find(event=>event.id==='2026-11-19/dhuhr');
+  eq(jumua.end-jumua.iqama,12*60000);eq(ordinary.end-ordinary.iqama,chosen.prayerModeMinutes*60000);
+  eq(jumua.iqama,Date.parse('2026-11-20T13:22:00-05:00'));eq(events.find(event=>event.id==='2026-11-27/dhuhr').iqama,Date.parse('2026-11-27T13:15:00-05:00'));
   same(JSON.parse(storage.get(INSTALL)).timetable,savedTable);
+  // Updating just the guide must take effect today, keep the same timetable on disk,
+  // and still honor the next genuine schedule change in this same running session.
+  app.setNow(Date.parse('2026-11-20T11:10:00-05:00'));
+  eq(app.api.getContentMode(),'friday-adhkar');
+  const writesBefore=app.writes.length;
+  app.api.openSettings();app.edit('نهاية الأذكار وبداية تنبيه الخطبة','11:05');
+  app.document.getElementById('saveButton').click();
+  same(app.writes.slice(writesBefore),[INSTALL,OLD_SETTINGS]);eq(app.api.getContentMode(),'khutbah');
+  app.api.useSettings({...app.api.getSettings(),iqama});
+  app.setNow(jumua.iqama-1);eq(app.api.getContentMode(),'khutbah');
+  app.setNow(jumua.iqama);eq(app.api.getContentMode(),'prayer');
 });
 test('A genuinely fresh install with a missing or empty location catalog stays in required repair setup without silently showing Dammam data',()=>{
   for(const catalog of [null,{countries:[],methods:[]}]){const app=runtime({catalog}),context=app.window.MosqueInstall.getContext();eq(context.required,true);eq(context.hasInstallation,false);eq(context.profile,null);eq(app.api.database,null);eq(app.api.getState().phase,'UNAVAILABLE');eq(context.settings.mosque.enabled,false);eq(app.storage.size,0);eq(app.writes.length,0);}
 });
 test('Bad atomic installation data requires repair and never silently adopts legacy mirrors',()=>{
   for(const value of ['{','{}',JSON.stringify({schemaVersion:1,profile:[],settings:{},timetable:{},completedAt:'2026-11-17T00:00:00.000Z'})]){const storage=new Map([[INSTALL,value],[OLD_SETTINGS,JSON.stringify(defaults)],[OLD_TABLE,legacyTable]]),app=runtime({storage}),context=app.window.MosqueInstall.getContext();eq(context.required,true);eq(context.hasInstallation,false);assert(context.error);eq(app.api.database,null);eq(storage.get(INSTALL),value);eq(app.writes.length,0);}
+});
+test('A damaged legacy settings file enters repair without showing the bundled mosque or fundraiser',()=>{
+  const storage=new Map([[OLD_SETTINGS,'{'],[OLD_TABLE,legacyTable]]);
+  const app=runtime({storage}),context=app.window.MosqueInstall.getContext();
+  eq(context.required,true);eq(context.settings.mosque.enabled,false);eq(context.settings.donation.visible,false);
+  eq(app.api.database,null);eq(storage.get(OLD_SETTINGS),'{');eq(storage.get(OLD_TABLE),legacyTable);eq(app.writes.length,0);
+});
+test('Recovering conflicting prayer times preserves the installed mosque, its donation choice and its original snapshot',()=>{
+  const first=runtime();first.window.MosqueInstall.commit(cairo,table(cairo));
+  const snapshot=JSON.parse(first.storage.get(INSTALL)),settings=snapshot.settings;
+  settings.iqama.overrides=[{id:'too-early',kind:'weekday',match:'5',prayer:'dhuhr',time:'00:01',label:''}];
+  settings.fridayProgram.cardSeconds=45;settings.donation.title='Local project';
+  const original=JSON.stringify(snapshot);first.storage.set(INSTALL,original);
+  const loaded=runtime({storage:first.storage}),context=loaded.window.MosqueInstall.getContext();
+  eq(context.required,false);same(context.settings.mosque,settings.mosque);same(context.settings.donation,settings.donation);
+  eq(context.settings.fridayProgram.cardSeconds,45);eq(context.settings.iqama.overrides.length,0);
+  eq(loaded.document.getElementById('mosqueInfo').querySelector('h1').textContent,cairo.mosqueName);
+  assert(loaded.api.database);eq(first.storage.get(INSTALL),original);eq(loaded.writes.length,0);
+});
+test('Sunrise adjustments must not cross Dhuhr even without a manual adhan override',()=>{
+  const app=runtime({storage:new Map([[OLD_SETTINGS,JSON.stringify(defaults)]])}),raw=JSON.parse(legacyTable);
+  const row=raw.records.find(r=>r.date==='2026-11-20');row.sunrise='11:20';row.dhuhr='11:30';
+  const db=app.api.validateTimetable(raw),settings=app.api.getSettings();
+  settings.adhanAdjustments.sunrise=9;app.api.buildEvents(db,settings);
+  for(const minutes of [10,11]){
+    settings.adhanAdjustments.sunrise=minutes;
+    assert(rejects(()=>app.api.buildEvents(db,settings)).message.includes('الشروق'));
+  }
 });
 test('All five presets validate, atomically commit a Cairo profile, and reload the full profile/settings/timetable snapshot',()=>{
   for(const methodId of Object.keys(engine.methodPresets)){const profile={...cairo,methodId},raw=table(profile),app=runtime();eq(app.window.MosqueInstall.validatePrepared(profile,raw),true);eq(app.writes.length,0);eq(app.window.MosqueInstall.getContext().required,true);same(app.window.MosqueInstall.commit(profile,raw),{ok:true});same(app.writes,[INSTALL,OLD_SETTINGS,OLD_TABLE]);const snapshot=profileStore.read({getItem:key=>app.storage.get(key)??null});same(snapshot.profile,profile);eq(snapshot.settings.mosque.fields.name.value,profile.mosqueName);eq(snapshot.settings.mosque.fields.address.value,'Test neighborhood، Cairo');eq(snapshot.settings.donation.visible,false);eq(snapshot.settings.iqama.offsets.fajr,10);eq(snapshot.settings.iqama.offsets.maghrib,5);eq(snapshot.settings.prayerModeMinutes,10);eq(snapshot.timetable.metadata.calculation.method,methodId);const loaded=runtime({storage:app.storage}),context=loaded.window.MosqueInstall.getContext();eq(context.required,false);eq(context.hasInstallation,true);same(context.profile,profile);eq(context.settings.mosque.fields.name.value,profile.mosqueName);eq(loaded.api.database.metadata.timezone,profile.timezone);eq(loaded.document.getElementById('mosqueInfo').querySelector('h1').textContent,profile.mosqueName);eq(loaded.document.getElementById('mosqueInfo').querySelectorAll('literal').length,0);eq(loaded.document.getElementById('gregorianDate').dir,'ltr');}

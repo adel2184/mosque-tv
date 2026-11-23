@@ -74,7 +74,7 @@ fs.copyFileSync(path.join(__dirname,'update-config.json'),path.join(work,'assets
 fs.copyFileSync(path.join(__dirname,'phone.html'),path.join(work,'assets/phone.html'));
 const deviceProfiles=JSON.parse(fs.readFileSync(path.join(__dirname,'device-profiles.json'),'utf8'));
 fs.copyFileSync(path.join(__dirname,'device-profiles.json'),path.join(work,'assets/device-profiles.json'));
-const profilePackages=[...new Set(deviceProfiles.profiles.flatMap(profile=>profile.packages))];
+const profilePackages=[...new Set([...deviceProfiles.profiles.flatMap(profile=>profile.packages),...deviceProfiles.restoreOnly])];
 if(profilePackages.some(name=>!/^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+$/.test(name)))throw Error('Invalid model package query.');
 const packagedManifest=path.join(work,'AndroidManifest.xml');
 const manifest=fs.readFileSync(path.join(__dirname,'AndroidManifest.xml'),'utf8');

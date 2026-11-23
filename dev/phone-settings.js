@@ -49,7 +49,9 @@
     return {hourFormat:p.hourFormat,dateStyle:p.dateStyle,neighborhood:text(p.neighborhood,180)};
   }
   function validateEditor(value) {
-    object(value, fields);
+    // A phone page opened before the update can still submit the older projection.
+    object(value, fields, ['fridayProgram']);
+    if (value.fridayProgram !== undefined) validateFridayProgram(value.fridayProgram);
     text(value.mosqueName,180);
     validatePreferences({hourFormat:value.hourFormat,dateStyle:value.dateStyle,neighborhood:value.neighborhood});
     object(value.iqamaOffsets, prayers);
@@ -61,13 +63,21 @@
       announcements:validateAnnouncements(value.announcements), manualOverrides:validateOverrides(value.manualOverrides)};
   }
   function friday(o) { return o.kind==='weekday' && o.match==='5' && o.prayer==='dhuhr'; }
+  function validateFridayProgram(program) {
+    object(program, ['enabled','startTime','noticeTime','cardSeconds'], ['prayerMinutes']);
+    requireValue(typeof program.enabled === 'boolean' && typeof program.noticeTime === 'string' && clock.test(program.noticeTime));
+    requireValue(program.startTime === null || (typeof program.startTime === 'string' && clock.test(program.startTime) && program.startTime < program.noticeTime));
+    integer(program.cardSeconds,5,300);
+    if (program.prayerMinutes != null) integer(program.prayerMinutes,1,60);
+  }
   function project(s, preferences, defaultTicker) {
     const fixed = s.iqama.overrides.find(friday);
     return {mosqueName:s.mosque.fields.name.value, neighborhood:preferences.neighborhood,
       announcements:(s.announcements ?? defaultTicker).map(({label,text}) => ({label,text})),
       iqamaOffsets:{...s.iqama.offsets}, jumuahTime:fixed?.time || '', prayerModeMinutes:s.prayerModeMinutes,
       manualOverrides:(s.manualOverrides || []).map(o=>({...o})), silentPhoneReminder:s.silentPhoneReminder,
-      postPrayerMinutes:s.postPrayerMinutes, hourFormat:preferences.hourFormat, dateStyle:preferences.dateStyle};
+      postPrayerMinutes:s.postPrayerMinutes, hourFormat:preferences.hourFormat, dateStyle:preferences.dateStyle,
+      fridayProgram:{...s.fridayProgram}};
   }
   function updateFriday(iqama, time) {
     const index = iqama.overrides.findIndex(friday);
@@ -82,7 +92,8 @@
   }
   function validateBackup(b) {
     object(b,['schemaVersion','mosque','iqama','prayerModeMinutes','slideSeconds','digitStyle','location'],
-      ['announcements','manualOverrides','displayPreferences','silentPhoneReminder','postPrayerMinutes','adhanAdjustments','donation']);
+      ['announcements','manualOverrides','displayPreferences','silentPhoneReminder','postPrayerMinutes','adhanAdjustments','donation','fridayProgram']);
+    if(b.fridayProgram!==undefined) validateFridayProgram(b.fridayProgram);
     object(b.mosque,['enabled','fields','custom']);
     const keys=['name','address','subtitle','imam','contact','announcement'];
     object(b.mosque.fields,keys);

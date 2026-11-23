@@ -16,6 +16,7 @@
   "prayerModeMinutes":15,
   "silentPhoneReminder":true,
   "postPrayerMinutes":5,
+  "fridayProgram":{"enabled":true,"startTime":null,"noticeTime":"11:00","cardSeconds":30,"prayerMinutes":null},
   "slideSeconds":20,
   "digitStyle":"western",
   "location":{"latitude":26.4207,"longitude":50.0888},

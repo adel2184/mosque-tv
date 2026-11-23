@@ -3,8 +3,15 @@
 /* Offline developer generator: built-in Node modules only; no runtime network or package install. */
 const fs=require('node:fs'),path=require('node:path'),zlib=require('node:zlib'),crypto=require('node:crypto');
 const root=path.resolve(__dirname,'..'),vendor=path.join(__dirname,'vendor/geonames');
-const stamp='2026-11-17';
+const stamp='2026-11-23';
 const hash=file=>crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+const manifestFile=path.join(vendor,'source-manifest.json');
+const previousManifest=JSON.parse(fs.readFileSync(manifestFile,'utf8'));
+if(previousManifest.snapshotDate===stamp){
+  for(const entry of previousManifest.sources){
+    if(hash(path.join(root,entry.file))!==entry.sha256)throw Error('Input differs from pinned '+stamp+' snapshot: '+entry.file);
+  }
+}
 function crc32(bytes){let crc=0xffffffff;for(const b of bytes){crc^=b;for(let i=0;i<8;i++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}return(crc^0xffffffff)>>>0;}
 function zipText(file){
   const zip=fs.readFileSync(file),end=zip.lastIndexOf(Buffer.from([0x50,0x4b,0x05,0x06]));
@@ -30,7 +37,9 @@ if(rows.length<20000)throw Error('Unexpectedly small city dataset');
 const cityIds=new Set(rows.map(c=>c[0]));
 const names=new Map(),nameSources=[];
 const alternateDirectory=path.join(vendor,'alternatenames');
-for(const basename of fs.readdirSync(alternateDirectory).filter(x=>/^[A-Z]{2}\.zip$/.test(x)).sort()){
+const nameArchives=fs.readdirSync(alternateDirectory).filter(x=>/^[A-Z]{2}\.zip$/.test(x)).sort();
+if(previousManifest.snapshotDate===stamp&&nameArchives.length!==previousManifest.sources.filter(entry=>entry.file.includes('/alternatenames/')).length)throw Error('Unexpected alternate names archive list');
+for(const basename of nameArchives){
   const file=path.join(alternateDirectory,basename);nameSources.push({file:'dev/vendor/geonames/alternatenames/'+basename,url:'https://download.geonames.org/export/dump/alternatenames/'+basename,sha256:hash(file)});
   for(const line of zipText(file).split(/\r?\n/)){
     const c=line.split('\t');if(!cityIds.has(c[1])||!['ar','en'].includes(c[2])||!c[3]||c[7]==='1'||c[6]==='1')continue;
@@ -39,6 +48,7 @@ for(const basename of fs.readdirSync(alternateDirectory).filter(x=>/^[A-Z]{2}\.z
   }
 }
 const countryRows=fs.readFileSync(path.join(vendor,'countryInfo.txt'),'utf8').split(/\r?\n/).filter(x=>x&&!x.startsWith('#')).map(x=>x.split('\t'));
+const compatibility=JSON.parse(fs.readFileSync(path.join(vendor,'compatibility.json'),'utf8'));
 const ar=new Intl.DisplayNames(['ar'],{type:'region'}),en=new Intl.DisplayNames(['en'],{type:'region'});
 const countries=new Map(countryRows.map(c=>[c[0],{id:c[0],nameAr:ar.of(c[0])||c[4],nameEn:en.of(c[0])||c[4],cities:[]}])) ;
 const seen=new Set(),skipped=[],timezones=new Set();let arCount=0,enCount=0;
@@ -46,10 +56,23 @@ for(const c of rows){
   if(c.length!==19||!/^\d+$/.test(c[0])||seen.has(c[0]))throw Error('Invalid/duplicate city record: '+c[0]);seen.add(c[0]);
   const country=countries.get(c[8]),latitude=Number(c[4]),longitude=Number(c[5]),timezone=c[17];
   if(!country){skipped.push({id:c[0],reason:'country not in countryInfo'});continue;}
+  if(c[0]==='7259466'&&c[1]==='Redford DUPLICATE OF https://www.geonames.org/5006917/redford.html'&&cityIds.has('5006917')){
+    skipped.push({id:c[0],reason:'publisher identifies this record as a duplicate of 5006917'});continue;
+  }
   if(!c[4]||!c[5]||!Number.isFinite(latitude)||!Number.isFinite(longitude)||latitude< -90||latitude>90||longitude< -180||longitude>180||!timezone)throw Error('Invalid location: '+c[0]);
   try{new Intl.DateTimeFormat('en',{timeZone:timezone}).format(0);}catch(error){throw Error('Unknown IANA timezone '+timezone+' for '+c[0]);}
   const arabic=names.get(c[0]+':ar'),english=names.get(c[0]+':en');if(arabic)arCount++;if(english)enCount++;
   country.cities.push({id:c[0],nameAr:arabic?arabic.name:c[2]||c[1],nameEn:english?english.name:c[2]||c[1],timezone,latitude,longitude});timezones.add(timezone);
+}
+for(const {countryId,cityId,latitude,longitude} of compatibility.previousCoordinates){
+  const city=countries.get(countryId)?.cities.find(item=>item.id===cityId);
+  if(!city)throw Error('Review missing city with historic coordinates: '+cityId);
+  (city.previousCoordinates??=[]).push({latitude,longitude});
+}
+for(const {countryId,...city} of compatibility.retiredCities){
+  if(seen.has(city.id)||!countries.has(countryId))throw Error('Review changed retired city: '+city.id);
+  seen.add(city.id);
+  countries.get(countryId).cities.push({...city,retired:true});
 }
 const countryList=[...countries.values()].filter(c=>c.cities.length).sort((a,b)=>a.id.localeCompare(b.id,'en'));
 for(const country of countryList)country.cities.sort((a,b)=>a.nameEn.localeCompare(b.nameEn,'en')||Number(a.id)-Number(b.id));
@@ -60,9 +83,11 @@ const methods=[
   {id:'NorthAmerica',nameAr:'أمريكا الشمالية — ISNA',nameEn:'North America — ISNA',descriptionAr:'حساب محلي وفق إعداد ISNA الشائع؛ يحتاج مراجعة محلية.',descriptionEn:'Local common ISNA preset; local review required.'},
   {id:'Karachi',nameAr:'جامعة العلوم الإسلامية بكراتشي',nameEn:'University of Islamic Sciences, Karachi',descriptionAr:'حساب محلي وفق إعداد كراتشي؛ يحتاج مراجعة.',descriptionEn:'Local Karachi preset; review required.'}
 ];
-const total=countryList.reduce((n,c)=>n+c.cities.length,0);
+const retiredCityCount=compatibility.retiredCities.length;
+const total=countryList.reduce((n,c)=>n+c.cities.length,0)-retiredCityCount;
 const catalog={schemaVersion:1,source:'GeoNames cities15000 + countryInfo; language-tagged Arabic/English alternate names where included',sourceUrl:'https://download.geonames.org/export/dump/',license:'CC BY 4.0 — licenses/geonames-CC-BY-4.0.txt; licenses/geonames-NOTICE.txt',snapshotDate:stamp,countryNamesSource:'Node Intl.DisplayNames / Unicode CLDR; generated strings',nameFallback:'GeoNames asciiname, then primary name, when a tagged translated name is unavailable',countryCount:countryList.length,cityCount:total,countries:countryList,methods};
 for(const id of ['110336','108410','104515','109223'])if(!countryList.some(country=>country.id==='SA'&&country.cities.some(city=>city.id===id)))throw Error('Required Saudi city missing '+id);
+catalog.retiredCityCount=retiredCityCount;
 const encoded=JSON.stringify(catalog)+'\n';if(Buffer.byteLength(encoded)>5*1024*1024)throw Error('Catalog exceeds 5MiB');
 fs.writeFileSync(path.join(root,'data/location-catalog.json'),encoded);
 const compressed=zlib.gzipSync(Buffer.from(encoded,'utf8'),{level:9});
@@ -80,5 +105,6 @@ const calendar={schemaVersion:1,calendar:'islamic-umalqura',source:'HijriDate 2.
 if(months[0].start!==calendar.rangeStart||months[months.length-1].start!=='2077-11-17')throw Error('Unexpected calendar boundaries');
 fs.writeFileSync(path.join(root,'data/setup-calendar.json'),JSON.stringify(calendar)+'\n');
 const manifest={schemaVersion:1,snapshotDate:stamp,generatorNode:process.version,generatorICU:process.versions.icu,generatorCLDR:process.versions.cldr,sources:[{file:'dev/vendor/geonames/cities15000.zip',url:'https://download.geonames.org/export/dump/cities15000.zip',sha256:hash(path.join(vendor,'cities15000.zip'))},{file:'dev/vendor/geonames/countryInfo.txt',url:'https://download.geonames.org/export/dump/countryInfo.txt',sha256:hash(path.join(vendor,'countryInfo.txt'))},...nameSources],output:{countries:countryList.length,cities:total,taggedArabicNames:arCount,taggedEnglishNames:enCount,timezones:timezones.size,catalogBytes:Buffer.byteLength(encoded),catalogSHA256:hash(path.join(root,'data/location-catalog.json')),catalogGzipBytes:compressed.length,catalogGzipSHA256:hash(path.join(root,'data/location-catalog.json.gz')),calendarBytes:fs.statSync(path.join(root,'data/setup-calendar.json')).size,calendarSHA256:hash(path.join(root,'data/setup-calendar.json')),calendarMonths:months.length,sourceMonthLengths:lengths,skipped}};
-fs.writeFileSync(path.join(vendor,'source-manifest.json'),JSON.stringify(manifest,null,2)+'\n');
+manifest.compatibility={file:'dev/vendor/geonames/compatibility.json',baseline:compatibility.baseline,baselineCatalogSHA256:compatibility.baselineCatalogSHA256,retiredCityCount,previousCoordinateCount:compatibility.previousCoordinates.length};
+fs.writeFileSync(manifestFile,JSON.stringify(manifest,null,2)+'\n');
 console.log(JSON.stringify(manifest.output,null,2));

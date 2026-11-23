@@ -6,16 +6,29 @@
   'use strict';
   const MINUTE = 60000;
 
+  // When a DST jump skips the chosen wall time, start at the first available minute.
+  function fridayTime(dateKey, time, timestamp) {
+    let minute = Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
+    while (minute < 24 * 60) {
+      try { return timestamp(dateKey, time); }
+      catch (error) { if (error.code !== 'NONEXISTENT_LOCAL_TIME') throw error; }
+      minute++;
+      time = String(Math.floor(minute / 60)).padStart(2, '0') + ':' + String(minute % 60).padStart(2, '0');
+    }
+    return null;
+  }
+
   // Called when the mosque's civil date or its prepared timetable changes. buildEvents()
   // sorts by adjusted adhan and validates prayer order, including adjacent local dates.
-  function prepareDay(events, dateKey, hijriDate, nextHijriMonth) {
+  function prepareDay(events, dateKey, hijriDate, nextHijriMonth, fridayProgram, timestamp) {
     const noon = Date.parse(dateKey + 'T12:00:00Z');
     const hijriMonth = typeof hijriDate === 'number' ? hijriDate : hijriDate?.month;
     const day = {
       friday: new Date(noon).getUTCDay() === 5,
       ramadan: hijriMonth === 9,
       nextRamadan: (nextHijriMonth === undefined ? hijriMonth : nextHijriMonth) === 9,
-      previousMaghrib: null, fajr: null, dhuhr: null, maghrib: null, nextFajr: null, nextMaghrib: null
+      previousMaghrib: null, fajr: null, maghrib: null, nextFajr: null, nextMaghrib: null,
+      fridayStart: null, fridayNotice: null, fridayIqama: null
     };
     if (!day.friday && !day.ramadan) return day;
 
@@ -28,9 +41,16 @@
     let index = first;
     while (index < events.length && events[index].date === dateKey) {
       const event = events[index++];
-      if (event.prayer === 'fajr' || event.prayer === 'dhuhr' || event.prayer === 'maghrib') {
+      if (event.prayer === 'fajr' || event.prayer === 'maghrib') {
         day[event.prayer] = event.adhan;
       }
+      // The Fajr deadline in buildEvents is the day's adjusted sunrise.
+      if (event.prayer === 'fajr') day.fridayStart = event.deadline ?? null;
+      if (event.prayer === 'dhuhr') day.fridayIqama = event.iqama;
+    }
+    if (day.friday && fridayProgram?.enabled && Number.isFinite(day.fridayIqama)) {
+      if (fridayProgram.startTime) day.fridayStart = fridayTime(dateKey, fridayProgram.startTime, timestamp);
+      day.fridayNotice = fridayTime(dateKey, fridayProgram.noticeTime, timestamp);
     }
     if (day.ramadan && index > first) {
       // A high-latitude schedule (or a mosque's adjustment) can place a boundary
@@ -56,6 +76,7 @@
     out.cue = 'none';
     out.phone = false;
     out.friday = 'none';
+    out.fridayStart = null;
     out.ramadan = 'none';
     out.ramadanAt = null;
     out.postStart = null;
@@ -79,11 +100,12 @@
     }
 
     if (!day || state.phase === 'UNAVAILABLE') return out;
-    if (day.friday) {
-      if (day.fajr !== null && day.dhuhr !== null && ms >= day.fajr && ms < day.dhuhr) {
-        out.friday = 'morning';
-      } else if (active?.prayer === 'dhuhr' && (out.cue === 'entrance' || out.cue === 'rows')) {
+    if (day.friday && day.fridayNotice !== null && ms < day.fridayIqama && out.cue !== 'rows') {
+      if (ms >= day.fridayNotice) {
         out.friday = 'listen';
+      } else if (day.fridayStart !== null && ms >= day.fridayStart) {
+        out.friday = 'adhkar';
+        out.fridayStart = day.fridayStart;
       }
     }
     if (day.ramadan && day.fajr !== null && day.maghrib !== null) {

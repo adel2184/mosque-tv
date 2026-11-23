@@ -131,24 +131,39 @@ test('Disabling phone alerts and post-prayer cards preserves rows and starts the
   app.setNow(event.end);equal(app.api.getContentMode(),'slides');assert(node('postPrayerDisplay').hidden&&!node('exitReminder').hidden);
   app.setNow(event.end+10*60000);assert(node('exitReminder').hidden&&!node('tickerViewport').hidden);
 });
-test('Real timetable: Friday in Ramadan keeps the two Friday reminders, fasting countdown and prayer cues independent',()=>{
+test('Friday in Ramadan rotates nine full cards from sunrise, shows the khutbah notice at 11 AM and switches at iqama',()=>{
   const app=createRuntime(stamp('2026-02-20T04:00:00')),node=id=>app.document.getElementById(id);
   const day=app.api.buildEvents(app.api.database,app.api.defaults).filter(e=>e.date==='2026-02-20');
   const [fajr,dhuhr,,maghrib]=day;
   app.setNow(fajr.adhan-1000);assert(!node('ramadanPill').hidden);equal(node('ramadanLabel').textContent,'المتبقي للإمساك (الفجر)');
-  equal(node('ramadanTime').textContent,'00:00:01');assert(node('fridayReminders').hidden);
+  equal(node('ramadanTime').textContent,'00:00:01');equal(app.api.getContentMode(),'slides');
   app.setNow(fajr.adhan);equal(node('ramadanLabel').textContent,'المتبقي للإفطار');
-  assert(!node('fridayReminders').hidden&&!node('fridayBlessings').hidden&&!node('visitReminder').hidden);
-  equal(node('fridayMessage').textContent,guide.fridayKahf);equal(node('fridayBlessings').textContent,guide.fridayBlessings);
-  app.setNow(fajr.end);assert(!node('postPrayerDisplay').hidden&&!node('fridayReminders').hidden&&!node('mosqueTicker').hidden);
-  app.setNow(dhuhr.adhan);assert(!node('fridayReminders').hidden&&node('fridayBlessings').hidden);equal(node('fridayMessage').textContent,guide.khutbah);
+  equal(app.api.getContentMode(),'adhan');assert(!node('visitReminder').hidden);
+  app.setNow(fajr.end);equal(app.api.getContentMode(),'post-prayer');
+  app.setNow(fajr.deadline-1);equal(app.api.getContentMode(),'slides');
+  equal(guide.fridayAdhkar.length,9);equal(new Set(guide.fridayAdhkar).size,9);
+  const dwell=app.api.defaults.fridayProgram.cardSeconds*1000;
+  for(let index=0;index<=9;index++){
+    app.setNow(fajr.deadline+index*dwell);
+    equal(app.api.getContentMode(),'friday-adhkar');
+    assert(!node('postPrayerDisplay').hidden&&node('mainDashboard').hidden&&node('postPrayerTitle').hidden&&node('postPrayerNote').hidden);
+    equal(node('postPrayerText').textContent,guide.fridayAdhkar[index%9]);
+  }
+  const transition=stamp('2026-02-20T11:00:00');
+  app.setNow(transition-1);equal(app.api.getContentMode(),'friday-adhkar');
+  for(const moment of [transition,dhuhr.adhan,dhuhr.iqama-1]){
+    app.setNow(moment);equal(app.api.getContentMode(),'khutbah');
+    assert(!node('khutbahDisplay').hidden&&node('postPrayerDisplay').hidden&&node('prayerOverlay').hidden);
+    equal(node('khutbahDisplay').textContent.trim(),'الرجاء إغلاق الجوال والإنصات للخطبة');
+  }
   equal(node('countdownLabel').textContent,'المتبقي على إقامة الجمعة');
   equal(node('prayerRows').children[2].querySelector('th').textContent,'الجمعة');
-  app.setNow(dhuhr.iqama);assert(!node('rowsKhutbah').hidden);equal(node('rowsKhutbah').textContent,guide.khutbah);
-  app.setNow(dhuhr.end);assert(node('fridayReminders').hidden&&node('rowsKhutbah').hidden);
+  app.setNow(dhuhr.iqama);equal(app.api.getContentMode(),'prayer');assert(node('khutbahDisplay').hidden&&!node('prayerOverlay').hidden);
+  app.setNow(dhuhr.end-1);equal(app.api.getContentMode(),'prayer');
+  app.setNow(dhuhr.end);equal(app.api.getContentMode(),'post-prayer');equal(node('postPrayerText').textContent,guide.postPrayer[0].text);
   app.setNow(maghrib.adhan-1);equal(node('ramadanTime').textContent,'00:00:01');
   app.setNow(maghrib.adhan);equal(node('ramadanLabel').textContent,'المتبقي للإمساك (الفجر)');
-  app.setNow(stamp('2026-11-16T08:00:00'));assert(node('ramadanPill').hidden&&node('fridayReminders').hidden);
+  app.setNow(stamp('2026-11-16T08:00:00'));assert(node('ramadanPill').hidden&&node('khutbahDisplay').hidden);
   equal(node('prayerRows').children[2].querySelector('th').textContent,'الظهر');
 });
 test('Fixed-clock display ticks perform no DOM writes across every new scene, including Friday in Ramadan',()=>{
@@ -156,14 +171,14 @@ test('Fixed-clock display ticks perform no DOM writes across every new scene, in
   const event=app.api.buildEvents(app.api.database,app.api.defaults).find(e=>e.date==='2026-02-20'&&e.prayer==='dhuhr');
   let writes=0;
   for(const id of ['mosqueTicker','tickerViewport','contextTicker','visitReminder','visitText','visitLabel','exitReminder',
-    'fridayReminders','fridayMessage','fridayBlessings','phoneReminder','rowsPhoneReminder','rowsKhutbah',
+    'khutbahDisplay','phoneReminder','rowsPhoneReminder',
     'postPrayerDisplay','postPrayerHeading','postPrayerTitle','postPrayerText','postPrayerNote','ramadanPill','ramadanTime','ramadanLabel']){
     const element=node(id),text=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element),'textContent');
     Object.defineProperty(element,'textContent',{get(){return text.get.call(this);},set(v){writes++;text.set.call(this,v);}});
     let hidden=element.hidden;Object.defineProperty(element,'hidden',{get(){return hidden;},set(v){writes++;hidden=v;}});
     const toggle=element.classList.toggle;element.classList.toggle=(...args)=>{writes++;return toggle(...args);};
   }
-  for(const when of [event.adhan-1,event.adhan,event.iqama-120000,event.iqama,event.iqama+10000,event.end,event.end+60000,event.end+300000,event.end+900000]){
+  for(const when of [stamp('2026-02-20T09:15:00'),stamp('2026-02-20T11:00:00'),event.adhan-1,event.adhan,event.iqama-120000,event.iqama,event.iqama+10000,event.end,event.end+60000,event.end+300000,event.end+900000]){
     app.setNow(when);writes=0;for(let i=0;i<12;i++)app.api.tick();equal(writes,0,'Redundant write at '+when);
   }
   equal(app.intervals.length,1);

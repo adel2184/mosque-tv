@@ -1,0 +1,59 @@
+{
+  "baseline": "https://github.com/adel2184/mosque-tv/blob/7ce8281d63c88b35921de9579d0e528b37d17fba/data/location-catalog.json.gz",
+  "baselineCatalogSHA256": "007a744461c44e7afc24e03a49ba600c8aeaf432e524dcc0a62a295d59f6cc22",
+  "retiredCities": [
+    {
+      "countryId": "IN",
+      "id": "1254745",
+      "nameAr": "Teni",
+      "nameEn": "Teni",
+      "timezone": "Asia/Kolkata",
+      "latitude": 10.01115,
+      "longitude": 77.47772
+    },
+    {
+      "countryId": "UA",
+      "id": "13545885",
+      "nameAr": "Nahirna Chastyna",
+      "nameEn": "Nahirna Chastyna",
+      "timezone": "Europe/Kyiv",
+      "latitude": 49.08899,
+      "longitude": 33.42984
+    },
+    {
+      "countryId": "UA",
+      "id": "13580034",
+      "nameAr": "Pravyi Bereh",
+      "nameEn": "Pravyi Bereh",
+      "timezone": "Europe/Kyiv",
+      "latitude": 47.11498,
+      "longitude": 37.58519
+    },
+    {
+      "countryId": "NG",
+      "id": "2338612",
+      "nameAr": "Amua Ichemidiara",
+      "nameEn": "Amua Ichemidiara",
+      "timezone": "Africa/Lagos",
+      "latitude": 5.66526,
+      "longitude": 5.76564
+    },
+    {
+      "countryId": "UA",
+      "id": "616743",
+      "nameAr": "Druzhkivka",
+      "nameEn": "Druzhkivka",
+      "timezone": "Europe/Kyiv",
+      "latitude": 48.61995,
+      "longitude": 37.52537
+    }
+  ],
+  "previousCoordinates": [
+    {
+      "countryId": "BD",
+      "cityId": "7683974",
+      "latitude": 23.74,
+      "longitude": 90.385
+    }
+  ]
+}

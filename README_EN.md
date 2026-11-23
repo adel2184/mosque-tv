@@ -37,6 +37,8 @@ Mosque TV is a free, silent app for **Android TV and Google TV** in mosques and 
 * **Update from the TV.** Connect briefly to download an update, then approve installation on the TV. Your settings and prayer timetable carry over.
 * **Use a remote or a phone.** Scan the pairing code and approve with the TV remote. You can then use your phone to navigate, type or edit settings.
 
+**Friday program.** Nine Arabic reminders rotate from local sunrise until 11 AM. A full-screen khutbah reminder lasts until Jumu’ah iqama. Staff can change the times and prayer duration under **Mosque settings → Friday program**.
+
 <a id="screenshots"></a>
 
 > 🖼️ These browser captures show **Mosque TV v2.5.1** with a sample mosque profile and simulated Android options in the control centre. You can switch the interface between English and Arabic. Duas, adhkar and Qur’anic verses stay in Arabic. Select an image to enlarge it. [Phone settings screenshot](#phone-settings-preview)
@@ -85,7 +87,7 @@ If you downloaded the source from GitHub, use Node.js 24 or 26 to run `node dev/
 
 Open **Control centre → Version and updates**. Select **Check for an app update**, then **Download and install update**. Choose **Update** in the Android prompt. Installing the signed update over the existing app keeps your mosque settings, prayer timetable and announcements.
 
-The signed **v2.5.1** APK (`versionCode 15`) is **1,649,258 bytes**. Its SHA-256 digest is `e0b6cce341cc9b725a71bb79629bbc9d2acab1529d0a63a9691484e1c8aa5fa4`. To verify a download on Windows, run `Get-FileHash .\mosque-display-tv.apk -Algorithm SHA256` and compare the result with the APK entry in `SHA256SUMS.txt` from the same release. [v2.5.1 release files](https://github.com/adel2184/mosque-tv/releases/tag/v2.5.1) · [Installation and signing guide (Arabic)](android/INSTALL_AR.txt)
+The signed **v2.5.2** APK (`versionCode 17`) is **1,657,450 bytes**. Its SHA-256 digest is `004b0c5cefca889edd4c9e6aa9e7a5e44cf9dcb65d79129c986b2e849c53ec81`. To verify a download on Windows, run `Get-FileHash .\mosque-display-tv.apk -Algorithm SHA256` and compare the result with the APK entry in `SHA256SUMS.txt` from the same release. [v2.5.2 release files](https://github.com/adel2184/mosque-tv/releases/tag/v2.5.2) · [Installation and signing guide (Arabic)](android/INSTALL_AR.txt)
 
 ---
 

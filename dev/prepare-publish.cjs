@@ -6,19 +6,24 @@ const root=path.resolve(__dirname,'..'),out=path.join(root,'publish');fs.mkdirSy
 const selected=new Set(['.gitattributes','.gitignore','README.md','README_AR.md','README_EN.md','CONTRIBUTING.md','DATA_SOURCES.md','TEST_REPORT.md','index.html','test.html']);
 const folders=['android','assets','data','dev','licenses','docs','.github','services','optimize'];
 const tracked=execFileSync('git',['ls-files','--cached','-z','--',...folders],{cwd:root,encoding:'utf8'});
+const ignoredTracked=new Set(execFileSync('git',['ls-files','--cached','--ignored','--exclude-standard','-z','--',...folders],{cwd:root,encoding:'utf8'}).split('\0'));
 const excluded=/(?:^|\/)(?:build|dist|history|node_modules|\.netlify|\.android-signing|\.android-tools)(?:\/|$)|(?:^|\/)(?:\.env(?:\.|$)|\.npmrc$|password\.txt$|tree\.json$)|\.(?:apk|zip|p12|pfx|jks|keystore|key|pem|pyc|tgz)$|(?:bridge|tv-settings|control-center)-test-results\.json$/i;
-for(const file of tracked.split('\0'))if(file&&!excluded.test(file)&&fs.existsSync(path.join(root,file)))selected.add(file);
+for(const file of tracked.split('\0')){
+  // Older worktrees track an unpacked Adhan distribution alongside the current bundle.
+  if(file&&!ignoredTracked.has(file)&&!file.startsWith('dev/vendor/adhan/package/')&&!excluded.test(file)&&fs.existsSync(path.join(root,file)))selected.add(file);
+}
 // These named public additions are also needed when preparing a working-tree export before a commit.
 const publicAdditions=['docs/DEVELOPMENT.md','docs/SETUP_EN.md','docs/PROJECT_NOTES_AR.md',
   'dev/vendor/adhan/adhan.umd.cjs',
+  'dev/vendor/geonames/compatibility.json',
   'dev/capture-readme.cjs','dev/preview-file.cjs',
   'dev/prayer-context.js','dev/prayer-display.css','dev/test-prayer-context.cjs',
   'dev/phone-settings.js','dev/test-phone-settings.cjs',
   'android/src/sa/mosque/display/PhoneApproval.java','android/tests/PhoneApprovalTest.java',
   'android/src/sa/mosque/display/AndroidPhonePlatform.java','android/tests/PhoneServerTest.java',
   'android/test-phone-pairing.cjs','android/test-phone-client.cjs',
-  ...['display-ar','display-en','prayer-mode','setup-ar','control-center-ar'].map(name=>'docs/images/'+name+'.webp')];
-for(const file of publicAdditions)if(fs.existsSync(path.join(root,file)))selected.add(file);
+  ...['display-ar','display-en','prayer-mode','setup-ar','control-center-ar','phone-settings','phone-settings-en'].map(name=>'docs/images/'+name+'.webp')];
+for(const file of publicAdditions)selected.add(file);
 const paths=Array.from(selected).sort();
 for(const generated of ['assets/data/location-catalog.js','data/location-catalog.json']){const index=paths.indexOf(generated);if(index>=0)paths.splice(index,1);}
 const manifest=[],text=[],binary=[];

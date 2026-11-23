@@ -71,7 +71,7 @@
   }
   function normalizedSearch(value){return String(value||'').normalize('NFKD').replace(/[\u064b-\u065f\u0670\u0300-\u036f]/g,'').replace(/[أإآ]/g,'ا').replace(/ى/g,'ي').toLowerCase().trim();}
   function pickerOptions(){
-    if(picker.kind==='country')return catalog.countries.slice();if(picker.kind==='city')return(selectedCountry()?.cities||[]).slice();
+    if(picker.kind==='country')return catalog.countries.slice();if(picker.kind==='city')return(selectedCountry()?.cities||[]).filter(city=>!city.retired);
     const values=new Set([draft.timezone]);(catalog.timezones||[]).forEach(value=>values.add(typeof value==='string'?value:value.id));catalog.countries.forEach(country=>country.cities.forEach(city=>values.add(city.timezone)));return Array.from(values).filter(value=>typeof value==='string'&&value).sort().map(id=>({id,nameAr:id,nameEn:id}));
   }
   function pickerResults(){
@@ -139,7 +139,12 @@
     return true;
   }
   function open(settings){
-    if(prayerActive())return false;if(opened)return true;build();options=settings&&typeof settings==='object'?settings:{};required=options.required===true;catalog=readCatalog();let loaded={};try{loaded=adapter().load();}catch(_){}draft=normalizeProfile(loaded);const city=selectedCity();if(city){draft.latitude=city.latitude;draft.longitude=city.longitude;if(!draft.timezone)draft.timezone=city.timezone||'';}
+    if(prayerActive())return false;if(opened)return true;build();options=settings&&typeof settings==='object'?settings:{};required=options.required===true;catalog=readCatalog();let loaded={};try{loaded=adapter().load();}catch(_){}draft=normalizeProfile(loaded);
+    const city=selectedCity();
+    if(city){
+      if(!Number.isFinite(draft.latitude)||!Number.isFinite(draft.longitude)){draft.latitude=city.latitude;draft.longitude=city.longitude;}
+      if(!draft.timezone)draft.timezone=city.timezone||'';
+    }
     step=0;picker=null;prepared=null;preparedKey='';busy='';lastTextId='';previousFocus=document.activeElement;generation++;opened=true;render();dialog.showModal();focus(draft.language==='en'?'setupLanguageEn':'setupLanguageAr');return true;
   }
   function handleBack(){if(!opened)return false;if(busy){if(busy!=='save')cancelPreparation();else notify(tr('wait'));return true;}if(picker){const id=picker.returnId;picker=null;render(id);return true;}if(step>0){step--;render('setupNext');return true;}if(required){notify(tr('needComplete'));return true;}close();return true;}

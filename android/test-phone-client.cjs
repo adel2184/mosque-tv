@@ -80,14 +80,14 @@ const state = {
   ok:true, revision:1,
   settings:{mosqueName:'جامع الاختبار',neighborhood:'الشرق',announcements:[{label:'أ','text':'الإعلان الأول'},{label:'ب',text:'الإعلان الثاني'}],
     iqamaOffsets:{fajr:25,dhuhr:20,asr:20,maghrib:10,isha:20},jumuahTime:'',prayerModeMinutes:15,manualOverrides:[],
-    silentPhoneReminder:true,postPrayerMinutes:5,hourFormat:24,dateStyle:'both'},
+    silentPhoneReminder:true,postPrayerMinutes:5,hourFormat:24,dateStyle:'both',fridayProgram:{...config.fridayProgram}},
   backup:copy(config)
 };
 state.backup.mosque.fields.name.value=state.settings.mosqueName;
 
-async function load(c) {
+async function load(c,settings=state.settings) {
   c.requests[0].reply(200,{connected:true,expiresInMs:900000});await settle();c.$('settings-tab').click();
-  c.requests[1].reply(200,{ok:true,revision:state.revision,settings:state.settings});await settle();
+  c.requests[1].reply(200,{ok:true,revision:state.revision,settings});await settle();
 }
 function change(c,id,value){const n=c.$(id);n.value=String(value);n.fire('input');}
 async function assetTests(){
@@ -119,6 +119,8 @@ async function editorTests() {
   assert(!c.$('editor-fields').disabled);assert(c.$('apply').disabled);assert.equal(c.timers.size,1);
   change(c,'mosqueName','New Mosque');change(c,'neighborhood','North');change(c,'offset-fajr','35');change(c,'jumuahTime','12:30');
   change(c,'prayerModeMinutes','11');change(c,'hourFormat','12');change(c,'dateStyle','hijri');change(c,'postPrayerMinutes','7');
+  assert.equal(c.$('friday-group').hidden,false);assert.equal(c.$('fridayStart').value,'');assert.equal(c.$('fridayDuration').value,'');
+  change(c,'fridayStart','07:10');change(c,'fridayNotice','10:50');change(c,'fridaySeconds','40');change(c,'fridayDuration','9');
   c.$('silentPhoneReminder').checked=false;c.$('silentPhoneReminder').fire('input');
   const anns=c.$('announcements');anns.children[1].querySelector('[data-action=up]').click();assert.equal(anns.children[0].querySelector('[name=label]').value,'ب');
   anns.children[1].querySelector('[data-action=remove]').click();c.$('add-ann').click();anns.children[1].querySelector('[name=text]').value='Lobby closed';
@@ -129,6 +131,7 @@ async function editorTests() {
   const submitted=JSON.parse(r[2].options.body);assert.deepEqual(Object.keys(submitted).sort(),['revision','settings']);
   assert.equal(r[2].url,'/api/pairing/apply-settings');assert.equal(r[2].options.headers['X-Mosque-Token'],'1'.repeat(48));
   assert.deepEqual(submitted.settings,{...state.settings,mosqueName:'New Mosque',neighborhood:'North',jumuahTime:'12:30',prayerModeMinutes:11,
+    fridayProgram:{enabled:true,startTime:'07:10',noticeTime:'10:50',cardSeconds:40,prayerMinutes:9},
     iqamaOffsets:{...state.settings.iqamaOffsets,fajr:35},announcements:[state.settings.announcements[1],{label:'',text:'Lobby closed'}],
     manualOverrides:[{date:'2026-12-04',time:'17:30',prayer:'maghrib'}],silentPhoneReminder:false,postPrayerMinutes:7,hourFormat:12,dateStyle:'hijri'});
   const saved=copy(state);saved.revision=2;saved.settings=submitted.settings;saved.backup.mosque.fields.name.value='New Mosque';
@@ -139,6 +142,7 @@ async function editorTests() {
 async function validationTests() {
   const c=client('en'),r=c.requests;await load(c);
   change(c,'mosqueName','Invalid\u202ename');c.$('editor').fire('submit');assert.equal(r.length,2);assert.equal(c.focus.id,'mosqueName');assert.match(c.$('form-status').textContent,/invalid/);
+  change(c,'mosqueName','Corrected');change(c,'fridayStart','12:00');c.$('editor').fire('submit');assert.equal(r.length,2);assert.equal(c.focus.id,'fridayStart');change(c,'fridayStart','');
   change(c,'mosqueName','Corrected');change(c,'offset-isha',181);c.$('editor').fire('submit');assert.equal(r.length,2);assert.equal(c.focus.id,'offset-isha');
   change(c,'offset-isha',10);c.$('editor').fire('submit');r[2].reply(409,{ok:false,error:'conflict'});await settle();
   assert.equal(c.$('mosqueName').value,'Corrected');assert(!c.$('reload').hidden);assert(c.$('apply').disabled);
@@ -148,17 +152,26 @@ async function validationTests() {
   for(const row of c.$('overrides').children){row.querySelector('[name=date]').value='2026-12-04';row.querySelector('[name=time]').value='12:00';}
   c.$('editor').fire('submit');assert.equal(r.length,4);assert.match(c.$('form-status').textContent,/already has/);
 }
+async function legacyFridayTests() {
+  const c=client(),settings=copy(state.settings);delete settings.fridayProgram;
+  await load(c,settings);
+  assert.equal(c.$('friday-group').hidden,true);
+  change(c,'mosqueName','اسم جديد');c.$('editor').fire('submit');
+  assert.equal(JSON.parse(c.requests[2].options.body).settings.fridayProgram,undefined);
+}
 async function backupTests() {
   const c=client('en-US'),r=c.requests;await load(c);
-  const legacy=copy(config);legacy.mosque.fields.name.value='Restored mosque';delete legacy.postPrayerMinutes;delete legacy.silentPhoneReminder;
+  const legacy=copy(config);legacy.mosque.fields.name.value='Restored mosque';delete legacy.postPrayerMinutes;delete legacy.silentPhoneReminder;delete legacy.fridayProgram;
   legacy.iqama.overrides=[{id:'fri',kind:'weekday',match:'5',prayer:'dhuhr',time:'12:40',label:''}];
   async function choose(raw){c.$('backupFile').files=[new Blob([raw])];c.$('backupFile').fire('change');await settle();}
   await choose(JSON.stringify(legacy));assert.match(c.$('form-status').textContent,/Review it/);assert.equal(r.length,2);
   assert.equal(c.$('jumuahTime').value,'12:40');assert.equal(c.$('mosqueName').value,'Restored mosque');
+  assert.equal(c.$('fridayNotice').value,state.settings.fridayProgram.noticeTime);
   c.$('download').click();r[2].reply(200,state);await settle();assert.deepEqual(JSON.parse(await c.downloads[0].text()),state.backup,'Export reflects saved TV settings until restore is applied');
   await choose('{"schemaVersion":2}');assert.match(c.$('form-status').textContent,/Invalid/);assert.equal(c.$('mosqueName').value,'Restored mosque');
   await choose('{"__proto__":{}}');assert.match(c.$('form-status').textContent,/Invalid/);
   await choose(JSON.stringify({...legacy,timetable:{records:[]}}));assert.match(c.$('form-status').textContent,/Invalid/);
+  await choose(JSON.stringify({...legacy,fridayProgram:{...config.fridayProgram,cardSeconds:0}}));assert.match(c.$('form-status').textContent,/Invalid/);
   await choose('x'.repeat(129*1024));assert.equal(r.length,3);
   change(c,'mosqueName','Restored and reviewed');c.$('editor').fire('submit');const body=JSON.parse(r[3].options.body);
   assert.deepEqual(body.backup,legacy);assert.equal(body.settings.mosqueName,'Restored and reviewed');assert.equal(body.settings.neighborhood,state.settings.neighborhood);
@@ -168,6 +181,7 @@ async function backupTests() {
 async function largeBackupTests() {
   const c=client('en'),r=c.requests;await load(c);
   const backup=copy(state.backup),text=size=>'界'.repeat(size);
+  backup.fridayProgram={...config.fridayProgram,startTime:'08:10',cardSeconds:45,prayerMinutes:9};
   for(const [key,field] of Object.entries(backup.mosque.fields))field.value=text(key==='name'?180:360);
   backup.mosque.custom=Array.from({length:8},(_,i)=>({id:String(i)+text(59),label:text(60),value:text(240),visible:true}));
   backup.iqama.overrides=Array.from({length:80},(_,i)=>({id:String(i)+text(57),kind:'date',match:new Date(Date.UTC(2027,0,i+1)).toISOString().slice(0,10),prayer:'fajr',time:'05:27',label:text(80)}));
@@ -180,6 +194,7 @@ async function largeBackupTests() {
   assert.equal(r[2].url,'/api/pairing/apply-settings');
   assert(Buffer.byteLength(r[2].options.body)>96*1024);
   assert.deepEqual(JSON.parse(r[2].options.body).backup,backup);
+  assert.deepEqual(JSON.parse(r[2].options.body).settings.fridayProgram,backup.fridayProgram);
   r[2].reply(200,state);await settle();assert.equal(c.timers.size,1);
 }
 async function lifecycleTests() {
@@ -202,4 +217,4 @@ async function lifecycleTests() {
   const leaving=client();await load(leaving);leaving.$('text').value='private note';leaving.hide();
   assert.equal(leaving.$('text').value,'');assert.equal(leaving.$('mosqueName').value,'');assert.equal(leaving.timers.size,0);
 }
-(async()=>{for(const test of [assetTests,remoteTests,editorTests,validationTests,backupTests,largeBackupTests,lifecycleTests]){await test();console.log('PASS '+test.name);}})().catch(e=>{console.error(e);process.exitCode=1;});
+(async()=>{for(const test of [assetTests,remoteTests,editorTests,validationTests,legacyFridayTests,backupTests,largeBackupTests,lifecycleTests]){await test();console.log('PASS '+test.name);}})().catch(e=>{console.error(e);process.exitCode=1;});

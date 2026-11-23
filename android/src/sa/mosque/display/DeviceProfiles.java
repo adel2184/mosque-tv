@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /** Pure exact matching of community records. Package safety remains a runtime policy. */
 final class DeviceProfiles {
@@ -21,6 +22,11 @@ final class DeviceProfiles {
         final Profile profile;
         final String reason;
         Match(Profile profile,String reason){this.profile=profile;this.reason=reason;}
+        boolean suggests(String name){return profile!=null&&profile.packages.contains(name);}
+    }
+
+    static boolean permitsRecovery(String name,int recordedState,boolean builtIn,Set<String> recoverablePackages){
+        return (recordedState==0||recordedState==1)&&(builtIn||recoverablePackages.contains(name));
     }
 
     static Match select(List<Profile> profiles,String manufacturer,String brand,String model,int androidMajor) {
@@ -50,7 +56,8 @@ final class DeviceProfiles {
             selected=row;
         }
         if(selected==null)return no(missingVersion?"MISSING_PROFILE_ANDROID_VERSION":"ANDROID_VERSION_MISMATCH");
-        return new Match(selected,"EXACT_MODEL_AND_VERSION");
+        if(missingVersion)return no("AMBIGUOUS_MODEL");
+        return new Match(selected,selected.packages.isEmpty()?"MODEL_IDENTIFICATION_ONLY":"EXACT_MODEL_AND_VERSION");
     }
 
     private static Match no(String reason){return new Match(null,reason);}

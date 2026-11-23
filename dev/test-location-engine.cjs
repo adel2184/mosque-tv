@@ -25,6 +25,25 @@ test('Profiles use only bounded whitelisted fields and a matching catalog countr
 test('The operator timezone override remains independent of the catalog city default',()=>{
   const value=engine.validateProfile(profile({timezone:'America/New_York'}),catalog);eq(value.timezone,'America/New_York');eq(value.latitude,26.43442);
 });
+test('Published city IDs still validate with their saved coordinates and timezones after the November catalog refresh',()=>{
+  const prior=[
+    ['IN','1254745',10.01115,77.47772,'Asia/Kolkata'],['UA','13545885',49.08899,33.42984,'Europe/Kyiv'],
+    ['UA','13580034',47.11498,37.58519,'Europe/Kyiv'],['NG','2338612',5.66526,5.76564,'Africa/Lagos'],
+    ['UA','616743',48.61995,37.52537,'Europe/Kyiv'],['BD','7683974',23.74,90.385,'Asia/Dhaka'],
+    ['CN','11694038',44.05305,80.87173,'Asia/Urumqi']
+  ];
+  for(const [countryId,cityId,latitude,longitude,timezone] of prior){
+    const saved=profile({countryId,cityId,latitude,longitude,timezone});
+    const result=engine.validateProfile(saved,catalog);
+    eq(result.latitude,latitude);eq(result.longitude,longitude);eq(result.timezone,timezone);
+    rejects(()=>engine.validateProfile({...saved,countryId:'SA'},catalog),'INVALID_CITY');
+    rejects(()=>engine.validateProfile({...saved,longitude:longitude+0.001},catalog),'CITY_COORDINATE_MISMATCH');
+  }
+  const all=catalog.countries.flatMap(country=>country.cities);
+  eq(all.filter(city=>city.retired).length,5);eq(all.filter(city=>!city.retired).length,catalog.cityCount);
+  eq(all.find(city=>city.id==='7683974').longitude,90.369);eq(all.find(city=>city.id==='11694038').timezone,'Asia/Shanghai');
+  eq(all.some(city=>city.id==='7259466'),false);assert(all.some(city=>city.id==='5006917'));
+});
 test('Malformed types, controls, URLs as IDs/zones/methods, out-of-range coordinates, and invalid clock settings are rejected',()=>{
   const invalid=[{language:'fr'},{hourFormat:0},{hourFormat:'12'},{dateStyle:'unknown'},{methodId:'https://example.com'},{methodId:'toString'},{timezone:'https://example.com'},{timezone:'Imaginary/Nowhere'},{timezone:'+03:00'},{countryId:'sa'},{cityId:'../city'},{latitude:NaN},{latitude:90},{longitude:181},{longitude:'50'},{mosqueName:''},{mosqueName:'a'.repeat(181)},{neighborhood:'x'.repeat(181)},{mosqueName:'bad\u0000name'}];
   for(const change of invalid)rejects(()=>engine.validateProfile(profile(change)));rejects(()=>engine.validateProfile(null));rejects(()=>engine.validateProfile([]));

@@ -226,7 +226,7 @@ test('Center visibility uses a guarded body class and boundary arrows do not ref
 
 test('Every old settings category remains reachable from the app shortcut with its original draft and cancellation behavior',()=>{
   const app=runtime();app.open();app.click('cc-row-app');eq(app.window.MosqueTV.isOpen(),true);eq(app.window.MosqueTV.getUIState().section,'mosque');eq(app.window.MosqueTV.getUIState().pane,'menu');
-  const ids=app.window.TEST.sections().map(item=>item.id);same(ids,['mosque','iqama','display','donation','data','backup','tv-home','tv-system','tv-power','tv-update','tv-device-setup']);for(const id of ids){app.section(id);eq(app.window.MosqueTV.getUIState().section,id);assert(app.get('tvSettingsRows'));}
+  const ids=app.window.TEST.sections().map(item=>item.id);same(ids,['mosque','iqama','display','friday','donation','data','backup','tv-home','tv-system','tv-power','tv-update','tv-device-setup']);for(const id of ids){app.section(id);eq(app.window.MosqueTV.getUIState().section,id);assert(app.get('tvSettingsRows'));}
   app.section('iqama');app.click(app.row('iqama','الفجر'));app.key('ArrowRight');app.click('tvEditorConfirm');eq(app.window.TEST.draft().iqama.offsets.fajr,26);app.click('cancelButton');eq(app.window.TEST.saved().iqama.offsets.fajr,25);eq(app.window.TEST.current().iqama.offsets.fajr,25);eq(app.center.isOpen(),true);eq(app.document.activeElement.id,'cc-row-app');
 });
 test('Saving original mosque settings through the center persists the original key and later cancellation keeps the saved value',()=>{

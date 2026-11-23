@@ -533,13 +533,16 @@ public final class MainActivity extends Activity {
                 fileWriter.execute(() -> {
                     boolean saved = false;
                     try {
-                        OutputStream output = getContentResolver().openOutputStream(uri, "w");
+                        // Replacing a longer backup must discard its previous JSON tail.
+                        OutputStream output = getContentResolver().openOutputStream(uri, "wt");
                         if (output == null) throw new IOException("No document stream");
                         try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(output, StandardCharsets.UTF_8))) {
                             writer.write(json); writer.flush();
                         }
                         saved = true;
-                    } catch (IOException | SecurityException ignored) { }
+                    } catch (IOException | RuntimeException providerFailure) {
+                        // A provider may reject the mode or fail remotely. Release the export UI in either case.
+                    }
                     final boolean success = saved;
                     runOnUiThread(() -> {
                         exportBusy = false;
@@ -639,6 +642,8 @@ public final class MainActivity extends Activity {
         dismissOperatorDialog();
         phoneDialogSession = session;
         phoneDialog = dialog;
+        // The QR and confirmation code belong on the operator's physical display.
+        if (dialog.getWindow() != null) dialog.getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
         showOperatorDialog(dialog);
     }
 

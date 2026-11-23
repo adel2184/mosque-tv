@@ -1,6 +1,6 @@
 GeoNames geographic data attribution
 
-Contains adapted GeoNames data, snapshot downloaded 2026-11-17.
+Contains adapted GeoNames data from the 2026-11-23 dump, checked 2026-11-24.
 Source and publisher: GeoNames, https://www.geonames.org/
 Downloads: https://download.geonames.org/export/dump/
 License: Creative Commons Attribution 4.0 International (CC BY 4.0)
@@ -12,6 +12,9 @@ coordinates and IANA timezone IDs; joined country records and language-tagged
 ar/en alternate names from the included country extracts; used ASCII/main-name
 fallbacks where a tagged translation was unavailable; generated country display
 names using Intl.DisplayNames; removed other fields; sorted and converted to JSON.
+Five historical city records and one former coordinate pair are retained from
+the 2026-11-17 snapshot for compatibility with existing installations. A record
+identified as a duplicate in the publisher's own name was excluded.
 Exact input filenames, publisher URLs and SHA-256 hashes are recorded in
 dev/vendor/geonames/source-manifest.json. No endorsement by GeoNames is implied.
 Data is supplied as is, without a warranty of accuracy, timeliness or completeness.

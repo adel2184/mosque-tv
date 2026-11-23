@@ -4,12 +4,15 @@ const {test} = require('node:test');
 const {prepareDay, resolve} = require('./prayer-context.js');
 const {timestamp, dateKey, hijriFromCalendar} = require('./location-engine.js');
 const calendar = require('../data/setup-calendar.json');
+const {fridayProgram} = require('./config.json');
 
 const MINUTE = 60000;
-const settings = {silentPhoneReminder: true, postPrayerMinutes: 5};
+const settings = {silentPhoneReminder: true, postPrayerMinutes: 5, fridayProgram};
 const riyadh = 'Asia/Riyadh';
 const friday = '2026-02-20'; // 3 Ramadan 1447 in the bundled Umm al-Qura calendar.
 const fajrAt = timestamp(friday, '04:40', riyadh);
+const sunriseAt = timestamp(friday, '06:05', riyadh);
+const noticeAt = timestamp(friday, '11:00', riyadh);
 const dhuhrAt = timestamp(friday, '12:15', riyadh);
 const maghribAt = timestamp(friday, '18:10', riyadh);
 const nextFajrAt = timestamp('2026-02-21', '04:39', riyadh);
@@ -19,12 +22,16 @@ function prayer(date, name, adhan) {
 function state(phase, active = null, previous = null) {
   return {phase, active, previous};
 }
-const fajr = prayer(friday, 'fajr', fajrAt);
+const fajr = {...prayer(friday, 'fajr', fajrAt), deadline: sunriseAt};
 const dhuhr = prayer(friday, 'dhuhr', dhuhrAt);
 const events = [fajr, dhuhr, prayer(friday, 'maghrib', maghribAt),
   prayer('2026-02-21', 'fajr', nextFajrAt)];
 const waiting = state('WAITING_FOR_ADHAN');
-const day = prepareDay(events, friday, hijriFromCalendar(friday, calendar).month);
+function fridayDay(timetable = events, programme = fridayProgram, zone = riyadh, date = friday) {
+  return prepareDay(timetable, date, hijriFromCalendar(date, calendar), undefined,
+    programme, (key, time) => timestamp(key, time, zone));
+}
+const day = fridayDay();
 function display(ms, base, options = settings, localDay = day) {
   return resolve(ms, base, localDay, options, {});
 }
@@ -81,23 +88,58 @@ test('the next adhan interrupts an unfinished post-prayer or exit window', () =>
   assert.equal(display(fajr.end + MINUTE, state('WAITING_FOR_NEXT_ADHAN')).cue, 'none');
 });
 
-test('Friday reminder starts at Fajr and changes at the actual adjusted Friday Dhuhr', () => {
-  assert.equal(display(fajrAt - 1, waiting).friday, 'none');
-  assert.equal(display(fajrAt, state('WAITING_FOR_IQAMA', fajr)).friday, 'morning');
-  assert.equal(display(dhuhrAt - 1, waiting).friday, 'morning');
+test('Friday cards start at adjusted sunrise, switch at 11:00 and stop exactly at Jumu’ah iqama', () => {
+  assert.equal(display(sunriseAt - 1, waiting).friday, 'none');
+  assert.equal(display(sunriseAt, waiting).friday, 'adhkar');
+  assert.equal(display(noticeAt - 1, waiting).fridayStart, sunriseAt);
+  assert.equal(display(noticeAt, waiting).friday, 'listen');
   assert.equal(display(dhuhrAt, state('WAITING_FOR_IQAMA', dhuhr)).friday, 'listen');
-  assert.equal(display(dhuhr.iqama, state('PRAYER_MODE', dhuhr)).friday, 'listen');
+  assert.equal(display(dhuhr.iqama - 1, state('WAITING_FOR_IQAMA', dhuhr)).friday, 'listen');
+  assert.equal(display(dhuhr.iqama, state('PRAYER_MODE', dhuhr)).friday, 'none');
+  assert.equal(display(dhuhr.iqama, state('PRAYER_MODE', dhuhr)).cue, 'rows');
+  assert.equal(display(dhuhr.iqama + 1, waiting).friday, 'none'); // A dismissed prayer remains dismissed.
   assert.equal(display(dhuhr.end, state('WAITING_FOR_NEXT_ADHAN', null, dhuhr)).friday, 'none');
-  const saturday = prepareDay(events, '2026-02-21', 9);
-  assert.equal(display(nextFajrAt + MINUTE, waiting, settings, saturday).friday, 'none');
+  assert.equal(display(dhuhr.end, state('WAITING_FOR_NEXT_ADHAN', null, dhuhr)).cue, 'adhkar');
+  const saturday = '2026-02-21';
+  const atNoon = timestamp(saturday, '12:00', riyadh);
+  const weekendDay = fridayDay([prayer(saturday, 'dhuhr', atNoon)], fridayProgram, riyadh, saturday);
+  assert.equal(display(atNoon, waiting, settings, weekendDay).friday, 'none');
 });
 
-test('Friday uses the mosque timezone even when the UTC clock still reads Thursday', () => {
+test('Friday options follow the local clock even when UTC still reads Thursday', () => {
   const zone = 'Pacific/Auckland', localFajr = timestamp(friday, '04:40', zone);
-  assert.equal(new Date(localFajr).getUTCDay(), 4);
+  const start = timestamp(friday, '07:30', zone), notice = timestamp(friday, '10:15', zone);
+  assert.equal(new Date(start).getUTCDay(), 4);
   const localEvents = [prayer(friday, 'fajr', localFajr), prayer(friday, 'dhuhr', timestamp(friday, '12:15', zone))];
-  const localDay = prepareDay(localEvents, dateKey(localFajr, zone), 0);
-  assert.equal(display(localFajr, state('WAITING_FOR_IQAMA', localEvents[0]), settings, localDay).friday, 'morning');
+  const localDay = fridayDay(localEvents, {...fridayProgram, startTime:'07:30', noticeTime:'10:15'}, zone, dateKey(start, zone));
+  assert.equal(display(start - 1, waiting, settings, localDay).friday, 'none');
+  assert.equal(display(start, waiting, settings, localDay).fridayStart, start);
+  assert.equal(display(notice, waiting, settings, localDay).friday, 'listen');
+});
+
+test('Friday programme yields to active prayers and respects early iqama, missing data and disabled programmes', () => {
+  const moved = {...dhuhr, adhan: noticeAt - 30 * MINUTE, iqama: noticeAt - 10 * MINUTE};
+  const localDay = fridayDay([fajr, moved]);
+  assert.equal(display(moved.iqama - 1, waiting, settings, localDay).friday, 'adhkar');
+  assert.equal(display(moved.iqama, waiting, settings, localDay).friday, 'none');
+  assert.equal(display(noticeAt, waiting, settings, localDay).friday, 'none');
+  assert.equal(display(sunriseAt, state('PRAYER_MODE', fajr)).friday, 'none');
+  assert.equal(display(noticeAt, waiting, settings, fridayDay([fajr])).friday, 'none');
+  const missingSunrise = fridayDay([dhuhr]);
+  assert.equal(display(sunriseAt, waiting, settings, missingSunrise).friday, 'none');
+  assert.equal(display(noticeAt, waiting, settings, missingSunrise).friday, 'listen');
+  const disabled = fridayDay(events, {...fridayProgram, enabled:false});
+  assert.equal(display(sunriseAt, waiting, settings, disabled).friday, 'none');
+  assert.equal(display(noticeAt, waiting, settings, disabled).friday, 'none');
+});
+
+test('a configured Friday start inside a DST gap begins when the mosque clock jumps forward', () => {
+  const date = '2026-03-27', zone = 'Asia/Jerusalem';
+  const first = timestamp(date, '03:00', zone);
+  const localDay = fridayDay([prayer(date, 'dhuhr', timestamp(date, '12:00', zone))],
+    {...fridayProgram, startTime:'02:45'}, zone, date);
+  assert.equal(display(first - 1, waiting, settings, localDay).friday, 'none');
+  assert.equal(display(first, waiting, settings, localDay).fridayStart, first);
 });
 
 test('bundled lunar month boundaries enter and leave Ramadan without network or Intl calendars', () => {
@@ -200,5 +242,5 @@ test('reusing the tick result clears prior states on clock jumps, background res
   resolve(fajr.end, state('WAITING_FOR_NEXT_ADHAN', null, fajr), day, settings, output);
   assert.equal(output.postStart, fajr.end);
   resolve(fajr.adhan - 1, state('UNAVAILABLE'), null, settings, output);
-  assert.deepEqual(output, {cue:'none', phone:false, friday:'none', ramadan:'none', ramadanAt:null, postStart:null});
+  assert.deepEqual(output, {cue:'none', phone:false, friday:'none', fridayStart:null, ramadan:'none', ramadanAt:null, postStart:null});
 });

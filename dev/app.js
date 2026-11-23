@@ -100,6 +100,18 @@
     out.silentPhoneReminder=c.silentPhoneReminder===undefined?defaults.silentPhoneReminder:bool(c.silentPhoneReminder,'تنبيه إغلاق الجوالات');
     out.postPrayerMinutes=c.postPrayerMinutes===undefined?defaults.postPrayerMinutes:c.postPrayerMinutes;
     if(!POST_PRAYER_MINUTES.includes(out.postPrayerMinutes))fail('اختر مدة معتمدة لأذكار ما بعد الصلاة.');
+    const friday=c.fridayProgram===undefined?defaults.fridayProgram:c.fridayProgram;
+    if(!friday||typeof friday!=='object'||Array.isArray(friday))fail('إعدادات برنامج الجمعة غير صالحة.');
+    const clockTime=value=>typeof value==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+    if((friday.startTime!==null&&!clockTime(friday.startTime))||!clockTime(friday.noticeTime))fail('أدخل وقتًا صحيحًا لبرنامج الجمعة بنظام 24 ساعة.');
+    if(friday.startTime!==null&&friday.startTime>=friday.noticeTime)fail('اختر بداية للأذكار تسبق تنبيه الخطبة.');
+    out.fridayProgram={
+      enabled:bool(friday.enabled,'برنامج الجمعة'),
+      startTime:friday.startTime,
+      noticeTime:friday.noticeTime,
+      cardSeconds:number(friday.cardSeconds,5,300,'مدة عرض كل ذكر',true),
+      prayerMinutes:friday.prayerMinutes==null?null:number(friday.prayerMinutes,1,60,'مدة صلاة الجمعة',true)
+    };
     out.adhanAdjustments={};KEYS.forEach(k=>out.adhanAdjustments[k]=number(c.adhanAdjustments?.[k]??0,-120,120,'تعديل وقت '+NAMES[k],true));
     out.slideSeconds=number(c.slideSeconds,5,300,'فاصل الشرائح',true);
     if(!['arabic','western'].includes(c.digitStyle))fail('نمط الأرقام غير مدعوم.');out.digitStyle=c.digitStyle;
@@ -180,7 +192,6 @@
     const nextKey={fajr:'dhuhr',dhuhr:'asr',asr:'maghrib',maghrib:'isha'};
     return function appendDay(events,r){
       const following=db.index.get(addDays(r.date,1));
-      if(manual.size&&eventAt(r,'dhuhr')<=eventAt(r,'sunrise'))fail('موعد الظهر اليدوي يجب أن يلي الشروق.');
       const dayOfWeek=fixedTimes.size?weekday(r.date):0;
       for(const p of PRAYERS){
         // The last guard day is needed only for its Fajr boundary; no invented following date.
@@ -191,7 +202,9 @@
         if(fixed&&p==='isha'&&iqama<adhan)iqama=timestamp(addDays(r.date,1),fixed.time,db.metadata.timezone);
         const nextAdhan=p==='isha'?eventAt(following,'fajr'):eventAt(r,nextKey[p]);
         const deadline=p==='fajr'?eventAt(r,'sunrise'):nextAdhan;
-        const end=iqama+c.prayerModeMinutes*60000;
+        if(p==='fajr'&&deadline>=nextAdhan)fail('يجب أن يكون الشروق قبل الظهر بعد ضبط المواقيت.');
+        const prayerMinutes=p==='dhuhr'&&weekday(r.date)===5?(c.fridayProgram?.prayerMinutes??c.prayerModeMinutes):c.prayerModeMinutes;
+        const end=iqama+prayerMinutes*60000;
         if(iqama<adhan||iqama>=deadline||end>nextAdhan)fail('إعداد إقامة '+NAMES[p]+' في '+r.date+' خارج فترة الصلاة أو يتداخل مع الصلاة التالية. راجع الفاصل والموعد الثابت ومدة وضع الصلاة.');
         events.push({id:r.date+'/'+p,date:r.date,prayer:p,adhan,iqama,end,deadline});
       }
@@ -238,17 +251,32 @@
   const STORE='mosque-display.settings.v1', TABLE_STORE='mosque-display.timetable.v1';
   let settingsRevision=Math.max(1,Date.now());
   const acceptanceFixture=!window.MosqueAndroid && location.hash==='#acceptance' && new URLSearchParams(location.search).get('test')==='1';
-  let storage,legacySettingsPresent=acceptanceFixture,nativeInstall={};try{if(!acceptanceFixture)storage=window.localStorage;}catch(_){storageNote='التخزين المحلي غير متاح؛ صدّر الإعدادات للاحتفاظ بها بعد إغلاق الصفحة.';}
+  let storage,legacySettingsPresent=acceptanceFixture,nativeInstall={};try{if(!acceptanceFixture)storage=window.localStorage;}catch(_){installationError='التخزين المحلي غير متاح. تحقّق من صلاحية التخزين قبل إعداد شاشة الجامع.';databaseError=installationError;}
   try{if(typeof window.MosqueAndroid?.setupStatus==='function')nativeInstall=JSON.parse(String(window.MosqueAndroid.setupStatus()));else if(window.MosqueAndroid)nativeInstall={legacyUpgrade:true};}catch(_){nativeInstall={legacyUpgrade:true};}
   if(storage){
     const s=safeRead(storage,STORE);legacySettingsPresent=Boolean(s.value);
     if(profileStore&&locationEngine){try{const candidate=profileStore.read(storage);if(candidate){activeProfile=locationEngine.validateProfile(candidate.profile,setupCatalog);ZONE=activeProfile.timezone;calendar=setupCalendar;savedSettings=validateSettings(candidate.settings);database=validateTimetable(candidate.timetable,{savedInstallation:true});installation=candidate;}}catch(error){installationError=String(error.message||error);databaseError=installationError;database=null;}}
-    if(!installation&&!installationError){if(!s.ok)storageNote='تعذر قراءة التخزين المحلي؛ تعمل الإعدادات في هذه الجلسة.';else if(s.value){try{savedSettings=validateSettings(JSON.parse(s.value));}catch(_){storageNote='ملف الإعدادات المحفوظ غير صالح؛ استُخدمت الإعدادات الأصلية.';}}}
+    if(!installation&&!installationError&&!s.ok){installationError='تعذّر الوصول إلى إعدادات الجامع المحفوظة.';databaseError=installationError;}
+    if(!installation&&!installationError&&s.value){
+      try{savedSettings=validateSettings(JSON.parse(s.value));}
+      catch(_){installationError='تعذّرت قراءة إعدادات الجامع المحفوظة. راجع إعداد الموقع والجامع.';databaseError=installationError;}
+    }
   }
   if(!installation&&!installationError)try{database=validateTimetable(sourceDatabase);if(storage){const stored=safeRead(storage,TABLE_STORE);if(stored.value){try{database=validateTimetable(JSON.parse(stored.value));}catch(_){storageNote+=' جدول المواقيت المحفوظ غير صالح؛ استُخدم الجدول المرفق.';}}}}catch(error){databaseError=error.message;}
   setupPending=Boolean(locationEngine&&profileStore&&(installationError||(!installation&&!legacySettingsPresent&&!nativeInstall.legacyUpgrade)));
   if(setupPending){database=null;savedSettings=clone(defaults);savedSettings.donation.visible=false;savedSettings.mosque.enabled=false;}
-  try{currentSettings=validateSettings(savedSettings);if(database)events=buildEvents(database,currentSettings);}catch(error){savedSettings=clone(defaults);currentSettings=clone(defaults);storageNote+=' تعارضت إعدادات الإقامة مع الجدول؛ استُخدمت الأمثلة الأصلية.';try{if(database)events=buildEvents(database,currentSettings);}catch(e){databaseError=e.message;database=null;}}
+  currentSettings=validateSettings(savedSettings);
+  if(database){
+    try{events=buildEvents(database,currentSettings);}
+    catch(error){
+      // An invalid prayer interval cannot authorize another mosque's identity or fundraising card.
+      savedSettings=validateSettings({...currentSettings,iqama:defaults.iqama,prayerModeMinutes:defaults.prayerModeMinutes,
+        adhanAdjustments:{},manualOverrides:[],fridayProgram:{...currentSettings.fridayProgram,prayerMinutes:null}});
+      currentSettings=clone(savedSettings);
+      storageNote+=' تعارض ضبط المواقيت مع الجدول، فاستُخدمت فواصل الإقامة الافتراضية لهذه الجلسة. راجع مواعيد الجامع.';
+      try{events=buildEvents(database,currentSettings);}catch(e){databaseError=e.message;database=null;}
+    }
+  }
   function el(tag,className,text){const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=text;return node;}
   function renderMosque(measure=true){
     const host=$('mosqueInfo');host.replaceChildren();host.hidden=!currentSettings.mosque.enabled;
@@ -311,7 +339,7 @@
   }
   function renderDonation(){
     const cfg=currentSettings.donation,card=$('donationCard');
-    const show=cfg.visible&&contentMode!=='prayer'&&contentMode!=='post-prayer';
+    const show=cfg.visible&&(contentMode==='slides'||contentMode==='adhan');
     card.hidden=!show;$('stage').classList.toggle('donation-hidden',!cfg.visible);
     $('donationTitle').textContent=cfg.title;
     $('donationDescription').textContent=cfg.description;
@@ -327,11 +355,17 @@
     if(!paragraph)return;
     const initial=contentMode==='adhan'?46:paragraph.textContent.length>200?42:paragraph.textContent.length>140?46:50;
     paragraph.style.lineHeight='1.7';
-    // Keep each supplied dhikr complete on one slide, including the long invocations.
-    for(let size=initial;size>=22;size--){
-      paragraph.style.fontSize=size+'px';
-      if(host.scrollHeight<=host.clientHeight+1&&paragraph.scrollWidth<=paragraph.clientWidth+1)break;
+    const fits=()=>host.scrollHeight<=host.clientHeight+1&&paragraph.scrollWidth<=paragraph.clientWidth+1;
+    paragraph.style.fontSize=initial+'px';
+    if(fits())return;
+    // Find the largest whole-pixel size that fits without laying out each intervening size.
+    let low=22,high=initial-1;
+    while(low<high){
+      const middle=Math.ceil((low+high)/2);
+      paragraph.style.fontSize=middle+'px';
+      if(fits())low=middle;else high=middle-1;
     }
+    paragraph.style.fontSize=low+'px';
   }
   function renderPostAdhan(){
     ++slideGeneration;const host=$('slideContent'),dua=displayContent.postAdhan;
@@ -362,18 +396,17 @@
   function formatDuration(seconds){
     return digits(pad(Math.floor(seconds/3600))+':'+pad(Math.floor(seconds/60)%60)+':'+pad(seconds%60),currentSettings.digitStyle);
   }
-  function syncGuide(ms,measure=true){
-    const {cue,phone,friday,ramadan,ramadanAt,postStart}=guideState;
+  function syncGuide(ms,mode,measure){
+    const {cue,phone,friday,fridayStart,ramadan,ramadanAt,postStart}=guideState;
     const lang=english()?'en':'ar',languageChanged=lang!==shownLanguage;
     const cueChanged=cue!==shownCue,fridayChanged=friday!==shownFriday;
     if(cueChanged||fridayChanged||languageChanged){
-      const visit=cue==='entrance'||cue==='exit', fridayCard=friday!=='none'&&cue!=='rows';
-      const contextual=visit||fridayCard;
-      const ticker=$('mosqueTicker'),scrolling=!contextual&&cue!=='rows'&&cue!=='adhkar'&&(currentSettings.announcements??displayContent.ticker).length>0;
-      ticker.hidden=!contextual&&!scrolling;
-      ticker.classList.toggle('contextual',contextual);
+      const visit=friday==='none'&&(cue==='entrance'||cue==='exit');
+      const ticker=$('mosqueTicker'),scrolling=mode==='slides'&&!visit&&(currentSettings.announcements??displayContent.ticker).length>0;
+      ticker.hidden=!visit&&!scrolling;
+      ticker.classList.toggle('contextual',visit);
       ticker.classList.toggle('ticker-paused',!scrolling);
-      $('contextTicker').hidden=!contextual;
+      $('contextTicker').hidden=!visit;
       $('tickerViewport').hidden=!scrolling;
       $('visitReminder').hidden=!visit;
       $('exitReminder').hidden=cue!=='exit';
@@ -382,14 +415,6 @@
         $('visitText').textContent=cue==='exit'?guide.exit:guide.entrance;
         if(cue==='exit')$('exitReminder').textContent=guide.exitReminder[lang];
       }
-      $('fridayReminders').hidden=!fridayCard;
-      $('fridayBlessings').hidden=friday!=='morning';
-      if(fridayCard){
-        $('fridayMessage').textContent=friday==='listen'?guide.khutbah:guide.fridayKahf;
-        if(friday==='morning')$('fridayBlessings').textContent=guide.fridayBlessings;
-      }
-      $('rowsKhutbah').hidden=!(cue==='rows'&&friday==='listen');
-      if(cue==='rows'&&friday==='listen')$('rowsKhutbah').textContent=guide.khutbah;
       if(scrolling&&measure)sizeTicker();
     }
     if(cueChanged||phone!==shownPhone||languageChanged){
@@ -401,19 +426,24 @@
       }
       if(!cueChanged&&phone!==shownPhone&&cue==='entrance')fitSlideText();
     }
-    if(cue==='adhkar'){
-      const cards=guide.postPrayer;
-      // Even the shortest configured session includes every card. Resumes use wall time.
-      const dwell=Math.min(30000,currentSettings.postPrayerMinutes*60000/cards.length);
-      const cardIndex=Math.floor((ms-postStart)/dwell)%cards.length;
-      if(cueChanged||languageChanged)$('postPrayerHeading').textContent=tr('أذكار ما بعد الصلاة','Post-prayer adhkar');
-      if(cueChanged||languageChanged||cardIndex!==shownPostCard){
+    const fridayCards=mode==='friday-adhkar';
+    if(fridayCards||mode==='post-prayer'){
+      const cards=fridayCards?guide.fridayAdhkar:guide.postPrayer;
+      const dwell=fridayCards?currentSettings.fridayProgram.cardSeconds*1000:Math.min(30000,currentSettings.postPrayerMinutes*60000/cards.length);
+      const cardIndex=Math.floor((ms-(fridayCards?fridayStart:postStart))/dwell)%cards.length;
+      if(cueChanged||fridayChanged||languageChanged){
+        $('postPrayerHeading').textContent=fridayCards?tr('أذكار يوم الجمعة','Friday adhkar'):tr('أذكار ما بعد الصلاة','Post-prayer adhkar');
+        $('postPrayerTitle').hidden=fridayCards;
+      }
+      if(cueChanged||fridayChanged||languageChanged||cardIndex!==shownPostCard){
         const card=cards[cardIndex],body=$('postPrayerText');
-        $('postPrayerTitle').textContent=card.title[lang];
-        body.textContent=card.text;
-        body.classList.toggle('long-dhikr',card.text.length>170);
-        $('postPrayerNote').textContent=card.note[lang];
-        $('postPrayerNote').hidden=!card.note[lang];
+        const text=fridayCards?card:card.text;
+        body.textContent=text;
+        body.classList.toggle('long-dhikr',text.length>170);
+        $('postPrayerTitle').textContent=fridayCards?'':card.title[lang];
+        const note=fridayCards?'':card.note[lang];
+        $('postPrayerNote').textContent=note;
+        $('postPrayerNote').hidden=!note;
         shownPostCard=cardIndex;
       }
     }
@@ -431,13 +461,24 @@
     }
     shownCue=cue;shownFriday=friday;shownPhone=phone;shownRamadan=ramadan;shownLanguage=lang;
   }
-  function syncContentMode(){
-    const cue=guideState.cue;
-    const next=cue==='rows'?'prayer':cue==='adhkar'?'post-prayer':cue==='entrance'?'adhan':'slides';
+  function syncContent(ms,measure){
+    const {cue,friday}=guideState;
+    let next='slides';
+    if(cue==='rows')next='prayer';
+    else if(friday==='listen')next='khutbah';
+    else if(friday==='adhkar')next='friday-adhkar';
+    else if(cue==='adhkar')next='post-prayer';
+    else if(cue==='entrance')next='adhan';
+    syncGuide(ms,next,measure);
     if(next===contentMode)return;
     contentMode=next;
-    $('mainDashboard').hidden=next==='post-prayer';
-    $('postPrayerDisplay').hidden=next!=='post-prayer';
+    const cards=next==='post-prayer'||next==='friday-adhkar';
+    $('mainDashboard').hidden=cards||next==='khutbah';
+    $('postPrayerDisplay').hidden=!cards;
+    $('postPrayerDisplay').classList.toggle('friday-adhkar',next==='friday-adhkar');
+    $('khutbahDisplay').hidden=next!=='khutbah';
+    document.body.classList.toggle('listening',next==='khutbah');
+    if(next==='khutbah')$('khutbahText').textContent=guide.khutbah;
     renderDonation();
     if(next==='adhan')renderPostAdhan();
     else if(next==='slides')renderSlide();
@@ -509,7 +550,7 @@
   function refreshGuideDay(key){
     const todayHijri=hijriFallback(key);
     const nextMonth=todayHijri?.month===9&&todayHijri.day>=29?hijriFallback(addDays(key,1))?.month:todayHijri?.month;
-    guideDay=window.MosquePrayerContext.prepareDay(events,key,todayHijri,nextMonth);
+    guideDay=window.MosquePrayerContext.prepareDay(events,key,todayHijri,nextMonth,currentSettings.fridayProgram,timestamp);
   }
   function tick(measure=true){
     const ms=nowProvider(), key=dateKey(ms), clock=formatClock(ms,currentSettings.digitStyle);
@@ -535,7 +576,7 @@
     const inPrayer=state.phase==='PRAYER_MODE';
     if(inPrayer&&lastPhase!=='PRAYER_MODE'){if(settingsOpen){closeSettings(true);return;}$('prayerOverlay').hidden=false;$('prayerOverlay').setAttribute('aria-hidden','false');document.body.classList.add('praying');}
     if(!inPrayer&&lastPhase==='PRAYER_MODE'){$('prayerOverlay').hidden=true;$('prayerOverlay').setAttribute('aria-hidden','true');document.body.classList.remove('praying');}
-    lastPhase=state.phase;syncGuide(ms,measure);syncContentMode();updateSlideshow(ms,contentMode!=='slides');
+    lastPhase=state.phase;syncContent(ms,measure);updateSlideshow(ms,contentMode!=='slides');
     if(staticTicker)showStaticTicker(ms);
     if(!settingsOpen&&ms-lastInteraction>5000&&!document.body.classList.contains('idle'))document.body.classList.add('idle');
   }
@@ -555,15 +596,26 @@
   }
   function refresh(){lastDate='';lastRenderSignature='';contentMode='';shownLanguage=null;if(window.MosqueLocale)window.MosqueLocale.set(activeProfile?.language||'ar');renderMosque();tick();}
   function applySettings(validated,preparedEvents){
+    const timesChanged=events!==preparedEvents;
     const tickerChanged=JSON.stringify(renderedAnnouncements)!==JSON.stringify(validated.announcements??displayContent.ticker);
+    const dashboardChanged=tickerChanged||currentSettings.digitStyle!==validated.digitStyle||
+      ['mosque','donation','displayPreferences'].some(key=>JSON.stringify(currentSettings[key])!==JSON.stringify(validated[key]));
     currentSettings=validated;events=preparedEvents;
     if(tickerChanged)renderTicker();
     if(settingsOpen)previewApplied=true;
-    refresh();
+    if(dashboardChanged){refresh();return;}
+    if(lastDate){
+      if(timesChanged)renderPrayerTable(nowProvider());
+      refreshGuideDay(lastDate);
+    }
+    tick();
+  }
+  function eventsForSettings(candidate){
+    return database&&scheduleChanged(currentSettings,candidate)?buildEvents(database,candidate):events;
   }
   function useSettings(candidate){
     const validated=validateSettings(candidate);
-    applySettings(validated,database?buildEvents(database,validated):[]);
+    applySettings(validated,eventsForSettings(validated));
   }
   function plainTimetable(db){return {metadata:clone(db.metadata),records:clone(db.records)};}
   function withProfile(profile,action){const before={profile:activeProfile,zone:ZONE,calendar};try{activeProfile=locationEngine.validateProfile(profile,setupCatalog);ZONE=activeProfile.timezone;calendar=setupCalendar;return action(activeProfile);}finally{activeProfile=before.profile;ZONE=before.zone;calendar=before.calendar;}}
@@ -578,8 +630,19 @@
   function validateSetup(profile,table){return withProfile(profile,p=>{const data=validateTimetable(table),settings=setupSettings(p),nextEvents=buildEvents(data,settings);return {profile:clone(p),settings,data,events:nextEvents};});}
   function persistCurrent(settings,table){
     if(!storage)return {ok:false};
-    if(installation){try{let profile={...activeProfile,...settings.displayPreferences};if(settings.mosque.fields.name.value.trim())profile.mosqueName=settings.mosque.fields.name.value;profile=locationEngine.validateProfile(profile,setupCatalog);const snapshot={...installation,profile,settings:clone(settings),timetable:plainTimetable(table)};profileStore.commit(storage,snapshot);installation=snapshot;activeProfile=profile;safeWrite(storage,STORE,JSON.stringify(settings));safeWrite(storage,TABLE_STORE,JSON.stringify(snapshot.timetable));return {ok:true};}catch(error){return {ok:false,error:String(error.message||error)};}}
-    return safeWrite(storage,STORE,JSON.stringify(settings));
+    if(!installation)return safeWrite(storage,STORE,JSON.stringify(settings));
+    try{
+      let profile={...activeProfile,...settings.displayPreferences};
+      if(settings.mosque.fields.name.value.trim())profile.mosqueName=settings.mosque.fields.name.value;
+      profile=locationEngine.validateProfile(profile,setupCatalog);
+      const timetable=table===database?installation.timetable:plainTimetable(table);
+      const snapshot={...installation,profile,settings:clone(settings),timetable};
+      profileStore.commit(storage,snapshot);
+      installation=snapshot;activeProfile=profile;
+      safeWrite(storage,STORE,JSON.stringify(settings));
+      if(table!==database||safeRead(storage,TABLE_STORE).value===null)safeWrite(storage,TABLE_STORE,JSON.stringify(timetable));
+      return {ok:true};
+    }catch(error){return {ok:false,error:String(error.message||error)};}
   }
   if(locationEngine&&profileStore)window.MosqueInstall={
     getContext:()=>({profile:activeProfile&&clone(activeProfile),settings:clone(savedSettings),required:setupPending,hasInstallation:Boolean(installation),error:installationError,calendar:setupCalendar,catalog:setupCatalog,year:Number((activeProfile?locationEngine.dateKey(nowProvider(),activeProfile.timezone):dateKey(nowProvider())).slice(0,4))}),
@@ -622,6 +685,7 @@
   }
   function scheduleChanged(previous,candidate) {
     return previous.prayerModeMinutes!==candidate.prayerModeMinutes||
+      (previous.fridayProgram.prayerMinutes??previous.prayerModeMinutes)!==(candidate.fridayProgram.prayerMinutes??candidate.prayerModeMinutes)||
       JSON.stringify(previous.iqama.offsets)!==JSON.stringify(candidate.iqama.offsets)||
       JSON.stringify(previous.iqama.overrides)!==JSON.stringify(candidate.iqama.overrides)||
       JSON.stringify(previous.adhanAdjustments)!==JSON.stringify(candidate.adhanAdjustments)||
@@ -650,6 +714,8 @@
     candidate.iqama.offsets=edit.iqamaOffsets;
     schema.updateFriday(candidate.iqama,edit.jumuahTime);
     candidate.prayerModeMinutes=edit.prayerModeMinutes;
+    if(edit.fridayProgram!==undefined)candidate.fridayProgram=edit.fridayProgram;
+    else if(request.backup?.fridayProgram===undefined)candidate.fridayProgram=savedSettings.fridayProgram;
     candidate.silentPhoneReminder=edit.silentPhoneReminder;
     candidate.postPrayerMinutes=edit.postPrayerMinutes;
     return validateSettings(candidate);
@@ -669,7 +735,7 @@
       guard();
       if(!storage)return {ok:false,error:'storage'};
       const previous=phoneState(),candidate=phoneCandidate(request,previous);
-      if(request.backup===undefined&&JSON.stringify(previous.settings)===JSON.stringify(request.settings))return previous;
+      if(request.backup===undefined&&JSON.stringify(previous.settings)===JSON.stringify({...previous.settings,...request.settings}))return previous;
       const nextProfile=activeProfile&&locationEngine.validateProfile({...activeProfile,...candidate.displayPreferences,
         mosqueName:candidate.mosque.fields.name.value||activeProfile.mosqueName},setupCatalog);
       let deadline=performance.now()+3;
@@ -710,7 +776,8 @@
       }
       const appliedRevision=settingsRevision;
       const nextTask=()=>new Promise(resolve=>setTimeout(resolve,0));
-      if(timesChanged&&lastDate)refreshGuideDay(lastDate);
+      if(lastDate&&(timesChanged||old.fridayProgram.enabled!==candidate.fridayProgram.enabled||
+        old.fridayProgram.startTime!==candidate.fridayProgram.startTime||old.fridayProgram.noticeTime!==candidate.fridayProgram.noticeTime))refreshGuideDay(lastDate);
       // Commit, then let the renderer handle any input before painting changes.
       // No older continuation can paint over another operator's subsequent save.
       await nextTask();
@@ -753,6 +820,23 @@
   function input(label,value,type,onchange,opts){const wrap=el('label','field'),caption=el('span',null,label),control=el('input');control.type=type||'text';if(type==='checkbox')control.checked=value;else control.value=value;Object.assign(control,opts||{});control.addEventListener('input',()=>onchange(type==='checkbox'?control.checked:type==='number'?Number(control.value):control.value));wrap.append(caption,control);return wrap;}
   function button(text,action){const b=el('button',null,text);b.type='button';b.addEventListener('click',action);return b;}
   function select(label,value,options,onchange){const wrap=el('label','field'),s=el('select');options.forEach(([v,t])=>{const o=el('option',null,t);o.value=v;s.append(o);});s.value=value;s.addEventListener('change',()=>onchange(s.value));wrap.append(el('span',null,label),s);return wrap;}
+  function weeklyFridayIqama(){
+    return draft.iqama.overrides.find(rule=>rule.kind==='weekday'&&rule.match==='5'&&rule.prayer==='dhuhr');
+  }
+  function addIqamaOverride(){
+    if(draft.iqama.overrides.length>=80)return message('الحد الأقصى ثمانون موعدًا.',true);
+    draft.iqama.overrides.push({id:'override-'+Date.now(),kind:'weekday',match:'5',prayer:'dhuhr',time:'',label:''});
+  }
+  function iqamaTimeInput(label,rule){
+    const shared=rule===weeklyFridayIqama();
+    const field=input(label,rule.time,'time',value=>{
+      rule.time=value;
+      // The desktop shows both editors together. Both edit this one weekly rule.
+      if(shared&&!tvMode)for(const control of $('settingsBody').querySelectorAll('.friday-iqama-time input'))control.value=value;
+    });
+    if(shared)field.classList.add('friday-iqama-time');
+    return field;
+  }
   // Desktop renders the complete form. On the TV, create only the section being edited.
   const settingsPages=[
     {id:'mosque', title:'بيانات الجامع', render(s){
@@ -766,8 +850,18 @@
       s.append(el('p','notice','الفواصل التالية أمثلة أولية تحتاج تأكيد إدارة الجامع. مواقيت الإقامة إعدادات محلية وليست نتائج فلكية.'));
       const intervals=el('div','inline');PRAYERS.forEach(p=>intervals.append(input(NAMES[p]+' (دقيقة)',draft.iqama.offsets[p],'number',v=>draft.iqama.offsets[p]=v,{min:1,max:180,step:1})));s.append(intervals,input('تمت مراجعة إعدادات الإقامة مع إدارة الجامع',draft.iqama.confirmed,'checkbox',v=>draft.iqama.confirmed=v),input('مدة وضع الصلاة (دقيقة)',draft.prayerModeMinutes,'number',v=>draft.prayerModeMinutes=v,{min:1,max:60,step:1}));
       s.append(el('p','notice',tr('يمكن تحديد إقامة ثابتة ليوم أسبوعي أو تاريخ بعينه. يتقدم التاريخ على الموعد الأسبوعي. لا يوجد موعد جمعة مفترض. تُستخدم المنطقة الزمنية المختارة وصيغة 24 ساعة؛ للعشاء فقط يمكن الامتداد إلى اليوم التالي.','Set a fixed iqama for a weekday or date. A date override takes priority. No Friday time is assumed. Times use the selected zone and 24-hour format; only Isha may extend into the next day.')));
-      draft.iqama.overrides.forEach((o,i)=>{const row=el('div','override-row');row.dataset.tvGroup=o.id;row.dataset.tvLabel='موعد الإقامة '+(i+1);row.append(select('الصلاة',o.prayer,PRAYERS.map(k=>[k,NAMES[k]]),v=>o.prayer=v),select('التكرار',o.kind,[['weekday','يوم في الأسبوع'],['date','تاريخ محدد']],v=>{o.kind=v;o.match=v==='weekday'?'5':dateKey(nowProvider());drawSettings();}));if(o.kind==='weekday')row.append(select('اليوم',o.match,WEEKDAYS.map((n,j)=>[String(j),n]),v=>o.match=v));else row.append(input('التاريخ',o.match,'date',v=>o.match=v));row.append(input('الإقامة 24 ساعة',o.time,'time',v=>o.time=v),input('وصف مثل ترتيب الجمعة',o.label,'text',v=>o.label=v,{maxLength:80}),button('حذف',()=>{draft.iqama.overrides.splice(i,1);drawSettings();}));s.append(row);});
-      s.append(button('إضافة موعد إقامة ثابت',()=>{if(draft.iqama.overrides.length>=80)return message('الحد الأقصى ثمانون موعدًا.',true);draft.iqama.overrides.push({id:'override-'+Date.now(),kind:'weekday',match:'5',prayer:'dhuhr',time:'',label:''});drawSettings();}));
+      draft.iqama.overrides.forEach((o,i)=>{
+        const row=el('div','override-row');
+        row.dataset.tvGroup=o.id;row.dataset.tvLabel='موعد الإقامة '+(i+1);
+        row.append(select('الصلاة',o.prayer,PRAYERS.map(k=>[k,NAMES[k]]),v=>{o.prayer=v;if(!tvMode)drawSettings();}),
+          select('التكرار',o.kind,[['weekday','يوم في الأسبوع'],['date','تاريخ محدد']],v=>{o.kind=v;o.match=v==='weekday'?'5':dateKey(nowProvider());if(!tvMode)drawSettings();}));
+        if(o.kind==='weekday')row.append(select('اليوم',o.match,WEEKDAYS.map((n,j)=>[String(j),n]),v=>{o.match=v;if(!tvMode)drawSettings();}));
+        else row.append(input('التاريخ',o.match,'date',v=>o.match=v));
+        row.append(iqamaTimeInput('الإقامة 24 ساعة',o),input('وصف مثل ترتيب الجمعة',o.label,'text',v=>o.label=v,{maxLength:80}),
+          button('حذف',()=>{draft.iqama.overrides.splice(i,1);drawSettings();}));
+        s.append(row);
+      });
+      s.append(button('إضافة موعد إقامة ثابت',()=>{addIqamaOverride();drawSettings();}));
     }},
     {id:'display', title:'العرض والأرقام', render(s){
       s.append(input('فاصل الشرائح (ثانية)',draft.slideSeconds,'number',v=>draft.slideSeconds=v,{min:5,max:300,step:1}),select('نمط الأرقام',draft.digitStyle,[['western','0123456789 — أرقام غربية'],['arabic','٠١٢٣٤٥٦٧٨٩ — أرقام عربية']],v=>draft.digitStyle=v));
@@ -775,6 +869,30 @@
         select('مدة عرض أذكار ما بعد الصلاة',String(draft.postPrayerMinutes),
           POST_PRAYER_MINUTES.map(minutes=>[String(minutes),minutes?minutes+' دقائق':'إيقاف']),
           value=>draft.postPrayerMinutes=Number(value)));
+    }},
+    {id:'friday', title:'برنامج الجمعة', render(s){
+      const friday=draft.fridayProgram;
+      s.append(input('تفعيل أذكار الجمعة وتنبيه الخطبة',friday.enabled,'checkbox',value=>friday.enabled=value));
+      s.append(select('بداية أذكار الجمعة',friday.startTime===null?'sunrise':'fixed',[['sunrise','عند شروق الشمس'],['fixed','وقت محدد']],mode=>{
+        friday.startTime=mode==='sunrise'?null:(friday.startTime??'');
+        if(!tvMode)drawSettings();
+      }));
+      if(friday.startTime!==null)s.append(input('وقت بدء الأذكار',friday.startTime,'time',value=>friday.startTime=value));
+      s.append(input('نهاية الأذكار وبداية تنبيه الخطبة',friday.noticeTime,'time',value=>friday.noticeTime=value),
+        input('مدة عرض كل ذكر (ثانية)',friday.cardSeconds,'number',value=>friday.cardSeconds=value,{min:5,max:300,step:1}));
+      const weeklyIqama=weeklyFridayIqama();
+      s.append(select('إقامة الجمعة',weeklyIqama?'fixed':'offset',[['offset','حسب فاصل إقامة الظهر'],['fixed','وقت أسبوعي ثابت']],mode=>{
+        if(mode==='fixed'&&!weeklyIqama)addIqamaOverride();
+        if(mode==='offset'&&weeklyIqama)draft.iqama.overrides.splice(draft.iqama.overrides.indexOf(weeklyIqama),1);
+        if(!tvMode)drawSettings();
+      }));
+      if(weeklyIqama)s.append(iqamaTimeInput('وقت إقامة الجمعة',weeklyIqama));
+      s.append(el('p','notice','ينتهي تنبيه الخطبة عند الإقامة وتبدأ شاشة الصلاة. إذا حُدّدت إقامة لتاريخ بعينه في «الإقامة ووضع الصلاة»، فتُعتمد في ذلك اليوم.'));
+      s.append(select('مدة شاشة صلاة الجمعة',friday.prayerMinutes===null?'inherit':'custom',[['inherit','مثل بقية الصلوات'],['custom','مدة خاصة بالجمعة']],mode=>{
+        friday.prayerMinutes=mode==='inherit'?null:(friday.prayerMinutes??draft.prayerModeMinutes);
+        if(!tvMode)drawSettings();
+      }));
+      if(friday.prayerMinutes!==null)s.append(input('مدة صلاة الجمعة (دقيقة)',friday.prayerMinutes,'number',value=>friday.prayerMinutes=value,{min:1,max:60,step:1}));
     }},
     {id:'donation', title:'بطاقة التبرع', render(s){
       s.append(input('إظهار بطاقة التبرع',draft.donation.visible,'checkbox',v=>draft.donation.visible=v),input('عنوان مشروع التبرع',draft.donation.title,'text',v=>draft.donation.title=v,{maxLength:90}),input('وصف مختصر للمشروع',draft.donation.description,'text',v=>draft.donation.description=v,{maxLength:180}),el('p','notice','تظهر البطاقة ثابتة بجوار الأذكار، وتختفي أثناء وضع الصلاة. إخفاؤها يحفظ النصوص. رمز التبرع هو الصورة المحلية المرفقة؛ تعديل النص لا يغير وجهة الرمز.'));
@@ -1018,7 +1136,7 @@
   $('previewButton').addEventListener('click',()=>{try{if(tvMode&&$('settingsDialog').classList.contains('previewing')){$('settingsDialog').classList.remove('previewing');$('previewButton').textContent='معاينة';drawSettings();tvFocus('tv-section-'+tvSectionId);return;}useSettings(draft);message('المعاينة مطبّقة مؤقتًا. احفظ للاعتماد أو ألغِ للرجوع.');$('settingsDialog').classList.add('previewing');if(tvMode){$('previewButton').textContent='العودة للإعدادات';tvFocus('previewButton');}}catch(error){message(error.message,true);}});
   $('saveButton').addEventListener('click',()=>{try{
     // Commit the validated draft before rendering: saving may itself enter prayer mode.
-    const candidate=validateSettings(draft),nextEvents=database?buildEvents(database,candidate):[];
+    const candidate=validateSettings(draft),nextEvents=eventsForSettings(candidate);
     const result=persistCurrent(candidate,database);if(!result.ok)throw Error(tr('تعذر الحفظ محليًا؛ لم تُعتمد المسودة. صدّر نسخة احتياطية وحاول مجددًا.','Could not save locally. The draft remains unsaved; export a backup and try again.'));
     settingsRevision++;savedSettings=clone(candidate);closeSettings(false);applySettings(candidate,nextEvents);
   }catch(error){message(error.message,true);}});

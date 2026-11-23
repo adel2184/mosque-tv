@@ -162,7 +162,22 @@ async function run(browserConfig) {
     if(failureMode==='corrupt')await special.addInitScript(()=>{localStorage.setItem('mosque-display.settings.v1','{corrupt');localStorage.setItem('mosque-display.timetable.v1','{"metadata":null}');});
     if(failureMode==='native-calendar-unavailable')await seedLegacySettings(special);
     if(failureMode==='native-calendar-unavailable')await special.addInitScript(()=>{const Native=Intl.DateTimeFormat;Intl.DateTimeFormat=function(locale,options){if(options&&options.calendar==='islamic-umalqura')throw new Error('unsupported calendar for test');return new Native(locale,options);};});
-    const p=await special.newPage();const issues=[];p.on('pageerror',error=>issues.push(error.message));await p.goto(url+'?test=1');await p.waitForFunction(()=>window.MosqueApp);const result=await p.evaluate(()=>{MosqueApp.setNow(()=>Date.parse('2026-11-16T09:15:00+03:00'));MosqueApp.tick();const required=MosqueInstall.getContext().required;if(!required)MosqueApp.openSettings();return{required,wizardOpen:MosqueSetup.isOpen(),phase:MosqueApp.getState().phase,rows:document.querySelectorAll('#prayerRows tr').length,native:MosqueApp.calendarNativeOK,hijri:document.getElementById('hijriDate').textContent,settings:document.getElementById('settingsBody').textContent};});await special.close();assert(issues.length===0&&result.rows===6,JSON.stringify({issues,result}));if(failureMode==='blocked')assert(result.required&&result.wizardOpen&&result.phase==='UNAVAILABLE',JSON.stringify(result));else assert(!result.required&&result.phase!=='UNAVAILABLE',JSON.stringify(result));if(failureMode==='native-calendar-unavailable')assert(result.native===false&&result.hijri.includes('1448'),JSON.stringify(result));if(failureMode==='corrupt')assert(result.settings.includes('غير صالح'),'لم يفسر التطبيق فساد التخزين');return{pageErrors:issues.length,rows:result.rows,phase:result.phase,setupRequired:result.required,nativeCalendar:result.native};
+    const p=await special.newPage();const issues=[];p.on('pageerror',error=>issues.push(error.message));
+    await p.goto(url+'?test=1');await p.waitForFunction(()=>window.MosqueApp);
+    const result=await p.evaluate(()=>{
+      MosqueApp.setNow(()=>Date.parse('2026-11-16T09:15:00+03:00'));MosqueApp.tick();
+      const context=MosqueInstall.getContext();
+      return {required:context.required,error:context.error,donation:context.settings.donation.visible,mosque:context.settings.mosque.enabled,
+        wizardOpen:MosqueSetup.isOpen(),phase:MosqueApp.getState().phase,rows:document.querySelectorAll('#prayerRows tr').length,
+        native:MosqueApp.calendarNativeOK,hijri:document.getElementById('hijriDate').textContent};
+    });
+    await special.close();assert(issues.length===0&&result.rows===6,JSON.stringify({issues,result}));
+    if(failureMode==='native-calendar-unavailable'){
+      assert(!result.required&&result.phase!=='UNAVAILABLE'&&result.native===false&&result.hijri.includes('1448'),JSON.stringify(result));
+    }else{
+      assert(result.required&&result.wizardOpen&&result.phase==='UNAVAILABLE'&&result.error&&!result.mosque&&!result.donation,JSON.stringify(result));
+    }
+    return{pageErrors:issues.length,rows:result.rows,phase:result.phase,setupRequired:result.required,nativeCalendar:result.native};
   });
   await check('الإطلاق العادي دون وضع الاختبار يعمل ولا يعرض واجهة الاختبارات',async()=>{
     const fresh=await browser.newContext({viewport:{width:1920,height:1080},serviceWorkers:'block'});await fresh.setOffline(true);const plain=await fresh.newPage();const requests=[],issues=[];plain.on('request',request=>{if(/^https?:/i.test(request.url()))requests.push(request.url());});plain.on('pageerror',error=>issues.push(error.message));await plain.goto(url);

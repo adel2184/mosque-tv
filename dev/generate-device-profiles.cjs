@@ -1,7 +1,12 @@
 'use strict';
 // Data-only reader. No upstream scripts, binaries, notes, or archive paths are executed/extracted.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),zlib=require('node:zlib');
-const ROOT=path.resolve(__dirname,'..'),PIN='3cd274f866b71ec15e4f7d8c796514b0baa8033c';
+const ROOT=path.resolve(__dirname,'..'),PIN='fe6cdcefa817da9f6facd3a17a3c5a086124f258';
+const BASELINE_PIN='3cd274f866b71ec15e4f7d8c796514b0baa8033c';
+const sources={
+  baseline:{commit:BASELINE_PIN,count:416,index:'161408be79b4051c66de1e412a11b1810e60645a7f7ac8215db5c3b2e78d3b8a',archive:'cleanyourtv-pinned.zip',tree:'cleanyourtv-tree.json'},
+  current:{commit:PIN,count:508,index:'c1cddbf09a95070d130844e731d46d72e19d33e3e6c1d3943acf5c21337263fc',archive:'cleanyourtv-'+PIN+'.zip',tree:'cleanyourtv-'+PIN+'.tree.json'}
+};
 const REPOSITORY='https://github.com/Gathin23/cleanyourtv';
 const PACKAGE=/^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$/;
 function gitBlob(bytes){return crypto.createHash('sha1').update(Buffer.from('blob '+bytes.length+'\0')).update(bytes).digest('hex');}
@@ -13,8 +18,13 @@ function modelSlug(id,brand){
 }
 function osMajor(os){
   if(typeof os!=='string')return null;
-  const match=/\b(?:Android(?:\s+TV)?|Google\s+TV)\s+(\d{1,2})(?:\b|\.)/i.exec(os);
-  return match&&Number(match[1])>=1&&Number(match[1])<=99?Number(match[1]):null;
+  const versions=new Set();
+  for(const match of os.matchAll(/\b(?:Android(?:\s+TV)?|Google\s+TV)\s+(\d{1,2})\b(?:\.\d+)*(?:\s*(?:\/|,|-|and|or|to)\s*(\d{1,2})\b)?/gi)){
+    versions.add(Number(match[1]));
+    if(match[2])versions.add(Number(match[2]));
+  }
+  const [version]=versions;
+  return versions.size===1&&version>=1&&version<=99?version:null;
 }
 function packages(text){
   const result=new Set();
@@ -51,36 +61,82 @@ function zipReader(bytes){
     if(raw.length!==item.length)throw Error('ZIP uncompressed length mismatch.');return raw;
   };
 }
-function generate(options={}){
-  const archive=options.archive||path.join(ROOT,'research/cleanyourtv-pinned.zip'),treePath=options.tree||path.join(ROOT,'research/cleanyourtv-tree.json');
-  const tree=JSON.parse(fs.readFileSync(treePath,'utf8'));
-  if(tree.sha!==PIN||tree.truncated||!Array.isArray(tree.tree))throw Error('Pinned Git tree is missing or truncated.');
+function snapshot(source){
+  const tree=JSON.parse(fs.readFileSync(path.join(ROOT,'research',source.tree),'utf8'));
+  if(tree.sha!==source.commit||tree.truncated||!Array.isArray(tree.tree))throw Error('Pinned Git tree is missing or truncated.');
   const blobs=new Map(tree.tree.filter(row=>row.type==='blob').map(row=>[row.path,row]));
-  const read=zipReader(fs.readFileSync(archive)),verified=[];
+  const read=zipReader(fs.readFileSync(path.join(ROOT,'research',source.archive))),verified=[];
   function selected(file){
     const reference=blobs.get(file);if(!reference||reference.mode!=='100644'||!/^([a-f0-9]{40})$/.test(reference.sha))throw Error('Selected source is not a regular pinned blob: '+file);
-    const bytes=read('cleanyourtv-'+PIN+'/'+file);
+    const bytes=read('cleanyourtv-'+source.commit+'/'+file);
     if(gitBlob(bytes)!==reference.sha)throw Error('Selected source Git blob mismatch: '+file);
     verified.push({path:file,gitBlobSHA:reference.sha,bytes:bytes.length});return bytes;
   }
   const license=selected('LICENSE');
   if(!license.toString('utf8').startsWith('MIT License\n\nCopyright (c) 2026 Gathin\n'))throw Error('Unexpected pinned license.');
   const files=[...blobs.keys()].filter(name=>/^examples\/[a-z0-9][a-z0-9-]*\/tv\.json$/.test(name)).sort();
-  if(files.length!==416)throw Error('Pinned catalogue should contain 416 profile records, not a device-validation claim.');
+  if(files.length!==source.count)throw Error('Unexpected pinned catalogue size.');
   const profiles=files.map(file=>{
     const id=file.split('/')[1],tv=JSON.parse(selected(file).toString('utf8'));
     if(!tv||typeof tv.brand!=='string'||!tv.brand.trim()||tv.brand.length>128||/[\x00-\x1f]/.test(tv.brand))throw Error('Invalid source brand: '+id);
     return {id,brand:tv.brand.trim(),osMajor:osMajor(tv.os),modelSlug:modelSlug(id,tv.brand),packages:packages(selected('examples/'+id+'/debloat.txt').toString('utf8'))};
   });
-  const document={schemaVersion:1,source:{repository:REPOSITORY,commit:PIN,license:'MIT'},profiles};
+  const index=verified.map(row=>row.path+' '+row.gitBlobSHA).sort().join('\n');
+  if(crypto.createHash('sha256').update(index).digest('hex')!==source.index)throw Error('Pinned package and model source index mismatch.');
+  return {profiles,license,verified};
+}
+function generate(options={}){
+  const baseline=snapshot(sources.baseline),current=snapshot(sources.current);
+  const oldById=new Map(baseline.profiles.map(row=>[row.id,row]));
+  const withdrawn=new Set();
+  for(const row of current.profiles){
+    const old=oldById.get(row.id);
+    if(!old)continue;
+    const currentNames=new Set(row.packages);
+    for(const name of old.packages)if(!currentNames.has(name))withdrawn.add(name);
+  }
+  const profiles=current.profiles.map(row=>{
+    const old=oldById.get(row.id);
+    const sameIdentity=old&&old.brand===row.brand&&old.modelSlug===row.modelSlug&&row.osMajor!==null&&old.osMajor===row.osMajor;
+    const retained=sameIdentity?row.packages.filter(name=>old.packages.includes(name)&&!withdrawn.has(name)):[];
+    return {...row,packages:retained};
+  });
+  const active=new Set(profiles.flatMap(row=>row.packages));
+  const previous=new Set(baseline.profiles.flatMap(row=>row.packages));
+  const restoreOnly=[...previous].filter(name=>!active.has(name)).sort();
+  const document={schemaVersion:2,source:{repository:REPOSITORY,commit:PIN,baselineCommit:BASELINE_PIN,license:'MIT'},profiles,restoreOnly};
   const json=JSON.stringify(document)+'\n';
-  const notice='CleanYourTV community profile data\n\nSource: '+REPOSITORY+'\nPinned commit: '+PIN+'\nPinned source paths: examples/*/tv.json and examples/*/debloat.txt; root LICENSE.\n\n416 community profile records are included. This count does not mean 416 TVs were\nvalidated by Mosque TV, and the upstream lists are not an automatic safety verdict.\nOnly profile ID, brand, explicit Android/Google TV major version, a model slug\nderived from the ID, and active valid package names are retained. Freeform notes,\nsource device descriptions, code, scripts, binary programs and fonts are excluded.\nEach selected raw source blob was verified against the pinned Git tree before\ngeneration. No upstream scripts were executed and no archive was fully extracted.\n\nDerived by dev/generate-device-profiles.cjs. Runtime package protection and explicit\noperator confirmation remain mandatory; exact model/version matching may refuse\nunknown, ambiguous or unsupported devices. No model or device aliases are invented.\n\nCopyright (c) 2026 Gathin. MIT license reproduced verbatim in CleanYourTV-MIT.txt.\nThe root license also mentions the upstream Outfit font; that font is not included.\n';
+  const license=current.license;
+  if(!license.equals(baseline.license))throw Error('Review the changed upstream license before updating the catalogue.');
+  const notice=`CleanYourTV community profile data
+
+Source: ${REPOSITORY}
+Pinned commit: ${PIN}
+Previous package eligibility baseline: ${BASELINE_PIN}
+Selected source files: examples/*/tv.json, examples/*/debloat.txt and LICENSE.
+
+The catalogue contains ${profiles.length} upstream model records. The count measures
+source coverage. Mosque TV has not physically validated these devices.
+Each record retains the ID, brand, an explicit single Android/Google TV major
+version when available, and a model slug derived from the ID. New records
+supply identification only. Package suggestions require inclusion for the
+same identity in both snapshots. A package withdrawn for any reviewed model
+is withheld across all records. Previously eligible names retained solely
+for recovery can only restore a change recorded in the local app journal.
+
+Derived by dev/generate-device-profiles.cjs. Each selected blob and the index
+of selected blob identifiers were verified for both pins. Only data is read.
+Runtime package protection and operator confirmation apply on the device.
+
+Copyright (c) 2026 Gathin. MIT license reproduced verbatim in CleanYourTV-MIT.txt.
+The root license also mentions the upstream Outfit font, which is not bundled.
+`;
   if(options.write!==false){
     fs.writeFileSync(path.join(ROOT,'android/device-profiles.json'),json);
     fs.writeFileSync(path.join(ROOT,'licenses/CleanYourTV-MIT.txt'),license);
     fs.writeFileSync(path.join(ROOT,'licenses/CleanYourTV-NOTICE.txt'),notice);
   }
-  return {document,json,license,notice,verified};
+  return {document,json,license,notice,baseline,current,withdrawn:[...withdrawn].sort()};
 }
-module.exports={PIN,REPOSITORY,PACKAGE,gitBlob,normalize,modelSlug,osMajor,packages,zipReader,generate};
-if(require.main===module){const result=generate();console.log(JSON.stringify({profiles:result.document.profiles.length,verifiedBlobs:result.verified.length,packages:result.document.profiles.reduce((sum,row)=>sum+row.packages.length,0),missingAndroidVersion:result.document.profiles.filter(row=>row.osMajor===null).length,bytes:Buffer.byteLength(result.json),sha256:crypto.createHash('sha256').update(result.json).digest('hex')}));}
+module.exports={PIN,BASELINE_PIN,sources,REPOSITORY,PACKAGE,gitBlob,normalize,modelSlug,osMajor,packages,zipReader,generate};
+if(require.main===module){const r=generate();console.log(JSON.stringify({profiles:r.document.profiles.length,verifiedBlobs:[r.baseline.verified.length,r.current.verified.length],packages:r.document.profiles.reduce((sum,row)=>sum+row.packages.length,0),missingAndroidVersion:r.document.profiles.filter(row=>row.osMajor===null).length,restoreOnly:r.document.restoreOnly,withdrawn:r.withdrawn,bytes:Buffer.byteLength(r.json),sha256:crypto.createHash('sha256').update(r.json).digest('hex')}));}

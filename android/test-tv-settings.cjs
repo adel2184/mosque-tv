@@ -61,7 +61,7 @@ function runtime(){
   return{document,window:sandbox,calls,stored,get:id=>document.getElementById(id),open:()=>sandbox.MosqueTV.toggleSettings(),back:()=>sandbox.MosqueTV.handleBack(),click:id=>{const target=document.getElementById(id);assert(target,'Missing '+id);target.click();},key:key=>{const event=emit(listeners,'keydown',{key,ctrlKey:false,altKey:false});if(key==='Enter'&&!event.defaultPrevented)document.activeElement.click();return event;},row:(section,label)=>{const item=sandbox.TEST.sections().find(item=>item.id===section).rows.find(row=>row.label.includes(label));assert(item,'Missing row '+section+'/'+label);return'tv-row-'+item.id;},section:id=>{if(sandbox.MosqueTV.getUIState().editing)sandbox.MosqueTV.handleBack();if(sandbox.MosqueTV.getUIState().pane!=='menu')sandbox.MosqueTV.handleBack();const button=document.getElementById('tv-section-'+id);assert(button,'Missing section '+id);button.click();},event:(name,detail={})=>emit(windowListeners,name,{detail})};
 }
 
-test('Actual TV hub opens with stable sections and the gear is inside the safe header',()=>{const app=runtime();app.open();eq(app.window.MosqueTV.isOpen(),true);eq(app.window.TEST.sections().length,11);eq(app.document.activeElement.id,'tv-section-mosque');const shell=fs.readFileSync(path.join(root,'dev/shell.html'),'utf8');assert(shell.indexOf('id="settingsButton"')>shell.indexOf('id="dashboardHeader"'));assert(shell.indexOf('id="settingsButton"')<shell.indexOf('class="identity-area"'));eq((shell.match(/id="settingsButton"/g)||[]).length,1);});
+test('Actual TV hub opens with stable sections and the gear is inside the safe header',()=>{const app=runtime();app.open();eq(app.window.MosqueTV.isOpen(),true);eq(app.window.TEST.sections().length,12);eq(app.document.activeElement.id,'tv-section-mosque');const shell=fs.readFileSync(path.join(root,'dev/shell.html'),'utf8');assert(shell.indexOf('id="settingsButton"')>shell.indexOf('id="dashboardHeader"'));assert(shell.indexOf('id="settingsButton"')<shell.indexOf('class="identity-area"'));eq((shell.match(/id="settingsButton"/g)||[]).length,1);});
 test('TV builds only the requested form and reads native status when entering device settings',()=>{
   const app=runtime(),created=[];
   const create=app.document.createElement;
@@ -92,6 +92,39 @@ test('TV builds only the requested form and reads native status when entering de
   app.window.MosqueTV.toggleSettings();
   eq(app.window.TEST.sections().length,0);
   eq(app.get('settingsBody').children.length,0);
+});
+test('Friday schedule can be timed and reset to sunrise using the TV remote',()=>{
+  const app=runtime();
+  app.open();
+  app.section('friday');
+  const row=label=>app.row('friday',label);
+  const choose=(label,index)=>{app.click(row(label));app.click('tv-choice-'+index);};
+  eq(app.window.TEST.draft().fridayProgram.startTime,null);
+  choose('بداية أذكار الجمعة',1);
+  app.click(row('وقت بدء الأذكار'));
+  app.key('ArrowRight');
+  app.click('tvEditorConfirm');
+  eq(app.window.TEST.draft().fridayProgram.startTime,'01:00');
+  choose('بداية أذكار الجمعة',0);
+  app.click(row('نهاية الأذكار'));
+  app.key('ArrowDown');app.key('ArrowRight');app.click('tvEditorConfirm');
+  choose('مدة شاشة صلاة الجمعة',1);
+  app.click(row('مدة صلاة الجمعة (دقيقة)'));app.key('ArrowRight');app.click('tvEditorConfirm');
+  choose('إقامة الجمعة',1);
+  app.click(row('وقت إقامة الجمعة'));
+  for(let hour=0;hour<13;hour++)app.key('ArrowRight');
+  app.click('tvEditorConfirm');
+  app.section('iqama');
+  app.click(app.row('iqama','الإقامة 24 ساعة'));
+  app.key('ArrowDown');app.key('ArrowRight');app.click('tvEditorConfirm');
+  app.section('friday');
+  eq(app.get(row('وقت إقامة الجمعة')).querySelector('.tv-row-value').textContent,'13:01');
+  app.click('saveButton');
+  const saved=JSON.parse(app.stored.get('test')),friday=saved.fridayProgram;
+  eq(friday.startTime,null);eq(friday.noticeTime,'11:01');eq(friday.prayerMinutes,16);
+  eq(saved.iqama.overrides.length,1);eq(saved.iqama.overrides[0].time,'13:01');
+  app.open();app.section('friday');choose('إقامة الجمعة',0);app.click('saveButton');
+  eq(JSON.parse(app.stored.get('test')).iqama.overrides.length,0);
 });
 test('The remote changes the phone reminder and adhkar duration, restores focus and saves both offline',()=>{
   const app=runtime();app.open();

@@ -55,6 +55,12 @@ summary{font-size:1.03rem;font-weight:650;cursor:pointer;min-height:34px}details
 <details><summary data-i="schedule"></summary><h2 data-i="iqama"></h2><div id="offsets" class="fields"></div>
 <div class="fields"><label class="field"><span data-i="jumuah"></span><input type="time" id="jumuahTime"></label><label class="field"><span data-i="prayerDuration"></span><input type="number" min="1" max="60" step="1" required id="prayerModeMinutes"></label></div>
 <h2 data-i="manual"></h2><div id="overrides"></div><button type="button" class="add" id="add-override" data-i="addOverride"></button></details>
+<details id="friday-group" hidden><summary data-i="friday"></summary>
+<label class="check"><input type="checkbox" id="fridayEnabled"><span data-i="fridayEnabled"></span></label>
+<div class="fields"><label class="field"><span data-i="fridayStart"></span><input type="time" id="fridayStart"></label>
+<label class="field"><span data-i="fridayNotice"></span><input type="time" id="fridayNotice" required></label>
+<label class="field"><span data-i="fridaySeconds"></span><input type="number" id="fridaySeconds" min="5" max="300" required></label>
+<label class="field"><span data-i="fridayDuration"></span><input type="number" id="fridayDuration" min="1" max="60"></label></div></details>
 <details><summary data-i="display"></summary><label class="check"><input type="checkbox" id="silentPhoneReminder"><span data-i="silent"></span></label>
 <div class="fields"><label class="field"><span data-i="adhkar"></span><select id="postPrayerMinutes"><option value="0" data-i="off"></option><option value="3" data-i="min3"></option><option value="5" data-i="min5"></option><option value="7" data-i="min7"></option></select></label>
 <label class="field"><span data-i="clock"></span><select id="hourFormat"><option value="12" data-i="hour12"></option><option value="24" data-i="hour24"></option></select></label>
@@ -85,6 +91,11 @@ const words = {
   schedule:['الصلاة والإقامة','Prayer and iqama'],iqama:['المدة بين الأذان والإقامة (دقائق)','Minutes from adhan to iqama'],
   fajr:['الفجر','Fajr'],dhuhr:['الظهر','Dhuhr'],asr:['العصر','Asr'],maghrib:['المغرب','Maghrib'],isha:['العشاء','Isha'],
   jumuah:['إقامة الجمعة (اختياري)','Jumu’ah iqama (optional)'],prayerDuration:['مدة شاشة الصلاة (دقائق)','Prayer screen duration (minutes)'],
+  friday:['برنامج الجمعة','Friday program'],fridayEnabled:['تفعيل أذكار الجمعة وتنبيه الخطبة','Enable Friday adhkar and khutbah reminder'],
+  fridayStart:['بداية الأذكار (اتركها فارغة للبدء عند الشروق)','Adhkar start (leave blank for sunrise)'],
+  fridayNotice:['نهاية الأذكار وبداية تنبيه الخطبة','End of adhkar and start of khutbah reminder'],
+  fridaySeconds:['مدة عرض كل ذكر (ثوانٍ)','Time per card (seconds)'],
+  fridayDuration:['مدة صلاة الجمعة بالدقائق (اتركها فارغة لاستخدام مدة الصلاة المعتادة)','Friday prayer in minutes (leave blank for the usual prayer duration)'],
   manual:['تعديل وقت الأذان لتاريخ محدد','Adhan overrides by date'],addOverride:['إضافة تعديل','Add override'],date:['التاريخ','Date'],prayer:['الصلاة','Prayer'],time:['وقت الأذان','Adhan time'],
   display:['العرض والتنبيهات','Display and alerts'],silent:['تنبيه إسكات الجوالات','Silent phone reminder'],adhkar:['أذكار ما بعد الصلاة','Post-prayer adhkar'],
   off:['إيقاف','Off'],min3:['٣ دقائق','3 minutes'],min5:['٥ دقائق','5 minutes'],min7:['٧ دقائق','7 minutes'],
@@ -263,6 +274,15 @@ function onRowAction(event) {
 function showSettings(settings) {
   for(const key of ['mosqueName','neighborhood','jumuahTime','prayerModeMinutes','postPrayerMinutes','hourFormat','dateStyle']) $(key).value=settings[key];
   $('silentPhoneReminder').checked=settings.silentPhoneReminder;
+  const friday=settings.fridayProgram;
+  $('friday-group').hidden=friday===undefined;
+  if(friday){
+    $('fridayEnabled').checked=friday.enabled;
+    $('fridayStart').value=friday.startTime ?? '';
+    $('fridayNotice').value=friday.noticeTime;
+    $('fridaySeconds').value=friday.cardSeconds;
+    $('fridayDuration').value=friday.prayerMinutes ?? '';
+  }
   for(const p of prayers) $('offset-'+p).value=settings.iqamaOffsets[p];
   $('announcements').replaceChildren(); settings.announcements.forEach(appendAnnouncement);
   $('overrides').replaceChildren(); settings.manualOverrides.forEach(appendOverride);
@@ -277,7 +297,11 @@ function readSettings() {
     jumuahTime:$('jumuahTime').value,prayerModeMinutes:Number($('prayerModeMinutes').value),
     manualOverrides:Array.from($('overrides').children,r=>({date:readRow(r,'date'),prayer:readRow(r,'prayer'),time:readRow(r,'time')})),
     silentPhoneReminder:$('silentPhoneReminder').checked,postPrayerMinutes:Number($('postPrayerMinutes').value),
-    hourFormat:Number($('hourFormat').value),dateStyle:$('dateStyle').value
+    hourFormat:Number($('hourFormat').value),dateStyle:$('dateStyle').value,
+    ...(snapshot.settings.fridayProgram && {fridayProgram:{
+      enabled:$('fridayEnabled').checked, startTime:$('fridayStart').value || null, noticeTime:$('fridayNotice').value,
+      cardSeconds:Number($('fridaySeconds').value), prayerMinutes:$('fridayDuration').value==='' ? null : Number($('fridayDuration').value)
+    }})
   };
 }
 // Markup-like characters are plain text in values/textContent. Reject control and directional override characters.
@@ -305,6 +329,15 @@ function validateEditor(s,allowEmptyName=false) {
   for(const p of prayers) if(!integer(s.iqamaOffsets[p],1,180)) return invalid('offset-'+p);
   if(s.jumuahTime!=='' && !timeValid(s.jumuahTime)) return invalid('jumuahTime');
   if(!integer(s.prayerModeMinutes,1,60)) return invalid('prayerModeMinutes');
+  if(s.fridayProgram!==undefined){
+    const f=s.fridayProgram;
+    if(!plain(f) || Object.keys(f).some(k=>!['enabled','startTime','noticeTime','cardSeconds','prayerMinutes'].includes(k))
+      || typeof f.enabled!=='boolean') return invalid('fridayEnabled');
+    if(!timeValid(f.noticeTime)) return invalid('fridayNotice');
+    if(f.startTime!==null && (!timeValid(f.startTime)||f.startTime>=f.noticeTime)) return invalid('fridayStart');
+    if(!integer(f.cardSeconds,5,300)) return invalid('fridaySeconds');
+    if(f.prayerMinutes!=null && !integer(f.prayerMinutes,1,60)) return invalid('fridayDuration');
+  }
   if(!Array.isArray(s.manualOverrides) || s.manualOverrides.length>80) return invalid('overrides');
   const dates=new Set();
   for(const [i,item] of s.manualOverrides.entries()) {
@@ -328,20 +361,22 @@ function showInvalid(issue) {
 }
 function settingsFromBackup(backup,live) {
   // Accept TV settings exports, not a timetable or a full installation snapshot.
-  const keys=['schemaVersion','mosque','iqama','prayerModeMinutes','slideSeconds','digitStyle','location','announcements','manualOverrides','displayPreferences','silentPhoneReminder','postPrayerMinutes','adhanAdjustments','donation'];
+  const keys=['schemaVersion','mosque','iqama','prayerModeMinutes','slideSeconds','digitStyle','location','announcements','manualOverrides','displayPreferences','silentPhoneReminder','postPrayerMinutes','adhanAdjustments','donation','fridayProgram'];
   if(!plain(backup) || Object.keys(backup).some(k=>!keys.includes(k)) || backup.schemaVersion!==1
     || !plain(backup.mosque?.fields) || !Array.isArray(backup.mosque.custom) || !plain(backup.iqama)
     || !Array.isArray(backup.iqama.overrides) || !plain(backup.location) || !integer(backup.slideSeconds,5,300)
     || !['western','arabic'].includes(backup.digitStyle)) throw Error('backup');
   const display=backup.displayPreferences;
   if(display!==undefined && !plain(display)) throw Error('backup');
+  if(backup.fridayProgram!==undefined && live.fridayProgram===undefined) throw Error('backup');
   const friday=backup.iqama.overrides.find(o=>o?.kind==='weekday' && o.match==='5' && o.prayer==='dhuhr');
   const settings={
     mosqueName:backup.mosque.fields.name?.value,neighborhood:display?.neighborhood ?? live.neighborhood,
     announcements:backup.announcements ?? live.announcements,iqamaOffsets:backup.iqama.offsets,
     jumuahTime:friday?.time ?? '',prayerModeMinutes:backup.prayerModeMinutes,
     manualOverrides:backup.manualOverrides ?? live.manualOverrides,silentPhoneReminder:backup.silentPhoneReminder ?? true,
-    postPrayerMinutes:backup.postPrayerMinutes ?? 5,hourFormat:display?.hourFormat ?? live.hourFormat,dateStyle:display?.dateStyle ?? live.dateStyle
+    postPrayerMinutes:backup.postPrayerMinutes ?? 5,hourFormat:display?.hourFormat ?? live.hourFormat,dateStyle:display?.dateStyle ?? live.dateStyle,
+    ...(live.fridayProgram && {fridayProgram:backup.fridayProgram===undefined ? live.fridayProgram : backup.fridayProgram})
   };
   if(validateEditor(settings,!live.mosqueName)) throw Error('backup');
   return settings;

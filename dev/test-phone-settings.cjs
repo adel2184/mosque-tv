@@ -96,6 +96,41 @@ test('Legacy settings remain usable without a wizard; Friday iqama and a dated m
   assert.equal(reopened.document.getElementById('clockPeriod').textContent,'');
   assert(reopened.document.getElementById('prayerRows').textContent.includes('15:00'));
 });
+test('A Friday edit from the phone takes effect today, survives older phone edits, and round-trips through backup',async()=>{
+  const app=legacy(),stamp=time=>Date.parse('2026-11-20T'+time+':00+03:00');
+  app.setNow(stamp('10:30'));
+  assert.equal(app.api.getContentMode(),'friday-adhkar');
+  const req=next(app),program={enabled:true,startTime:'08:00',noticeTime:'10:00',cardSeconds:55,prayerMinutes:9};
+  req.settings.fridayProgram=program;
+  req.settings.jumuahTime='13:00';
+  assert.equal((await api(app).apply(req,live)).ok,true);
+  assert.equal(app.api.getContentMode(),'khutbah');
+  app.setNow(stamp('13:00'));
+  assert.equal(app.api.getState().active.end,stamp('13:09'));
+  app.setNow(stamp('10:30'));
+  const clockEdit=next(app);
+  clockEdit.settings.fridayProgram.noticeTime='11:10';
+  assert.equal((await api(app).apply(clockEdit,live)).ok,true);
+  assert.equal(app.api.getContentMode(),'friday-adhkar');
+  const exported=api(app).state(true).backup;
+  same(exported.fridayProgram,{...program,noticeTime:'11:10'});
+  const oldPage=next(app);delete oldPage.settings.fridayProgram;
+  const writesBefore=app.writes.length;
+  assert.equal((await api(app).apply(oldPage,live)).revision,oldPage.revision);
+  assert.equal(app.writes.length,writesBefore);
+  oldPage.settings.neighborhood='North';
+  assert.equal((await api(app).apply(oldPage,live)).ok,true);
+  same(api(app).state().settings.fridayProgram,exported.fridayProgram);
+  const oldBackup=next(app);delete oldBackup.settings.fridayProgram;
+  oldBackup.backup=api(app).state(true).backup;delete oldBackup.backup.fridayProgram;
+  assert.equal((await api(app).apply(oldBackup,live)).ok,true);
+  same(api(app).state().settings.fridayProgram,exported.fridayProgram);
+  const restore=next(app);delete restore.settings.fridayProgram;
+  restore.backup=exported;restore.backup.fridayProgram.enabled=false;
+  assert.equal((await api(app).apply(restore,live)).ok,true);
+  assert.equal(app.api.getContentMode(),'slides');
+  same(next(runtime({storage:app.storage})).settings.fridayProgram,restore.backup.fridayProgram);
+});
 test('Invalid schema/unsafe control characters, unsupported backup keys, schedule conflicts and stale sessions never write',async()=>{
   const app=legacy();
   const invalid=[s=>s.extra=true,s=>s.silentPhoneReminder='true',s=>s.hourFormat='24',s=>s.mosqueName='bad\x00name',

@@ -40,7 +40,6 @@ final class DeviceSetup {
         {"com.tcl.overseasappshow","عروض تطبيقات TCL","واجهة عرض التطبيقات المقترحة."},
         {"com.tcl.messagebox","رسائل TCL الترويجية","رسائل وعروض الشركة؛ راجع حاجتك إليها."},
         {"com.tcl.esticker","ملصقات العرض الترويجية","ملصقات وضع العرض الترويجي."},
-        {"com.tcl.exhibit","العرض التجريبي للمتجر","وضع العرض التجريبي؛ ليس مشغّل الشاشة الرئيسي."},
         {"com.google.android.tvrecommendations","توصيات Android TV","صفوف التوصيات؛ لا يعطّل واجهة المصنع نفسها."},
         {"com.google.android.feedback","ملاحظات Google","أداة إرسال ملاحظات التشخيص."},
         {"com.google.android.play.games","ألعاب Google Play","اختياري إذا لم تُستخدم الألعاب على شاشة الجامع."}
@@ -60,16 +59,15 @@ final class DeviceSetup {
     private volatile boolean mutationInFlight;
     private final DeviceOptimization optimization;
     private final DeviceProfileCatalog profileCatalog;
-    private static volatile Set<String> communityAllowed=Collections.emptySet();
     DeviceSetup(Context context){
         this.context=context.getApplicationContext();operator=context instanceof DeviceSetupActivity?(DeviceSetupActivity)context:null;packages=this.context.getPackageManager();
-        profileCatalog=DeviceProfileCatalog.get(this.context);communityAllowed=profileCatalog.allPackages;
+        profileCatalog=DeviceProfileCatalog.get(this.context);
         journalFile=new AtomicFile(new File(this.context.getFilesDir(),"device-setup-journal.json"));
         if(journalFile.getBaseFile().exists()||new File(journalFile.getBaseFile().getPath()+".bak").exists())try(InputStream input=journalFile.openRead()){
             JSONObject saved=new JSONObject(new String(read(input,65536),StandardCharsets.UTF_8));
             if(saved.getInt("version")!=1)throw new IOException("إصدار سجل الاستعادة غير مدعوم.");
             journal=saved.getJSONObject("packages");Iterator<String> names=journal.keys();
-            while(names.hasNext()){String name=names.next();int before=journal.getJSONObject(name).getInt("before");if(!allowed(name)||(before!=0&&before!=1))throw new IOException("سجل الاستعادة غير صالح.");}
+            while(names.hasNext())if(!canRestoreRecorded(names.next()))throw new IOException("سجل الاستعادة غير صالح.");
         }catch(Exception error){journalProblem=new IOException("تعذر قراءة سجل الاستعادة؛ لن يُنفذ أي تعطيل أو استعادة آلية.",error);}
         final AtomicFile animationFile=new AtomicFile(new File(this.context.getFilesDir(),"device-animation-journal.bin"));
         optimization=new DeviceOptimization(value->{AdbLocal.Reply reply=command(value);return new DeviceOptimization.Reply(reply.output,reply.code);},new DeviceOptimization.Journal(){
@@ -78,7 +76,31 @@ final class DeviceSetup {
         },()->requireReady());
     }
     private static boolean builtin(String name){for(String[] entry:CANDIDATES)if(entry[0].equals(name))return true;return false;}
-    static boolean allowed(String name){return builtin(name)||communityAllowed.contains(name);}
+    boolean allowed(String name){
+        return builtin(name)||profileCatalog.match().suggests(name);
+    }
+    private boolean canRestoreRecorded(String name){
+        JSONObject entry=journal.optJSONObject(name);
+        int before=entry==null?-1:entry.optInt("before",-1);
+        return DeviceProfiles.permitsRecovery(name,before,builtin(name),profileCatalog.recoverablePackages);
+    }
+    List<String> recordedPackages(){
+        List<String> result=new ArrayList<>();
+        for(Iterator<String> names=journal.keys();names.hasNext();){
+            String name=names.next();if(canRestoreRecorded(name))result.add(name);
+        }
+        Collections.sort(result);
+        return result;
+    }
+    String recordedTitle(String name){
+        for(String[] entry:CANDIDATES)if(entry[0].equals(name))return entry[1];
+        try{
+            ApplicationInfo info=packages.getApplicationInfo(name,PackageManager.MATCH_DISABLED_COMPONENTS);
+            CharSequence label=info.loadLabel(packages);
+            if(label!=null&&label.length()>0&&label.length()<=180)return label.toString();
+        }catch(PackageManager.NameNotFoundException|RuntimeException ignored){}
+        return name;
+    }
     boolean connected(){return adb!=null;}
     int journalCount(){return journal.length();}
     String journalWarning(){return journalProblem==null?"":journalProblem.getMessage();}
@@ -172,7 +194,7 @@ final class DeviceSetup {
         for(String name:names){
             requireReady();
             if(DeviceSetupActivity.isPrayerActive())throw new IOException("بدأ وضع الصلاة؛ توقف التنفيذ قبل العنصر التالي، وسجل الاستعادة محفوظ.");
-            if(!allowed(name))throw new IOException("عنصر استعادة غير مسموح.");
+            if(!canRestoreRecorded(name))throw new IOException("عنصر استعادة غير مسموح.");
             mutationInFlight=true;
             try{
                 int before=journal.getJSONObject(name).getInt("before");
@@ -184,7 +206,7 @@ final class DeviceSetup {
         return "أكد الجهاز استعادة "+restored+" عنصرًا إلى حالته الأصلية المسجلة. لم تُفعّل عناصر كانت معطّلة قبل استخدام الأداة.";
     }
     String restorePackage(String name)throws IOException{
-        requireReady();if(!allowed(name)||!journal.has(name))throw new IOException("لا يوجد سجل استعادة مسموح لهذا التطبيق.");
+        requireReady();if(!canRestoreRecorded(name))throw new IOException("لا يوجد سجل استعادة مسموح لهذا التطبيق.");
         mutationInFlight=true;
         try{JSONObject original=journal.getJSONObject(name);int before=original.getInt("before");
             requireReady();AdbLocal.Reply answer=command((before==0?"pm default-state --user 0 ":"pm enable --user 0 ")+name);

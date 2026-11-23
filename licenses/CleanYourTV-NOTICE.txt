@@ -1,20 +1,22 @@
 CleanYourTV community profile data
 
 Source: https://github.com/Gathin23/cleanyourtv
-Pinned commit: 3cd274f866b71ec15e4f7d8c796514b0baa8033c
-Pinned source paths: examples/*/tv.json and examples/*/debloat.txt; root LICENSE.
+Pinned commit: fe6cdcefa817da9f6facd3a17a3c5a086124f258
+Previous package eligibility baseline: 3cd274f866b71ec15e4f7d8c796514b0baa8033c
+Selected source files: examples/*/tv.json, examples/*/debloat.txt and LICENSE.
 
-416 community profile records are included. This count does not mean 416 TVs were
-validated by Mosque TV, and the upstream lists are not an automatic safety verdict.
-Only profile ID, brand, explicit Android/Google TV major version, a model slug
-derived from the ID, and active valid package names are retained. Freeform notes,
-source device descriptions, code, scripts, binary programs and fonts are excluded.
-Each selected raw source blob was verified against the pinned Git tree before
-generation. No upstream scripts were executed and no archive was fully extracted.
+The catalogue contains 508 upstream model records. The count measures
+source coverage. Mosque TV has not physically validated these devices.
+Each record retains the ID, brand, an explicit single Android/Google TV major
+version when available, and a model slug derived from the ID. New records
+supply identification only. Package suggestions require inclusion for the
+same identity in both snapshots. A package withdrawn for any reviewed model
+is withheld across all records. Previously eligible names retained solely
+for recovery can only restore a change recorded in the local app journal.
 
-Derived by dev/generate-device-profiles.cjs. Runtime package protection and explicit
-operator confirmation remain mandatory; exact model/version matching may refuse
-unknown, ambiguous or unsupported devices. No model or device aliases are invented.
+Derived by dev/generate-device-profiles.cjs. Each selected blob and the index
+of selected blob identifiers were verified for both pins. Only data is read.
+Runtime package protection and operator confirmation apply on the device.
 
 Copyright (c) 2026 Gathin. MIT license reproduced verbatim in CleanYourTV-MIT.txt.
-The root license also mentions the upstream Outfit font; that font is not included.
+The root license also mentions the upstream Outfit font, which is not bundled.
